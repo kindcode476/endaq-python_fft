@@ -55,6 +55,10 @@ DOCS_REQUIRES = [
 EXAMPLE_REQUIRES = [
     ]
 
+ANALYSER_REQUIRES = [
+    "dash>=2.0",
+    ]
+
 setuptools.setup(
         name='endaq',
         version=get_version('endaq/__init__.py'),
@@ -88,5 +92,6 @@ setuptools.setup(
             'test': INSTALL_REQUIRES + TEST_REQUIRES,
             'docs': INSTALL_REQUIRES + DOCS_REQUIRES,
             'example': INSTALL_REQUIRES + EXAMPLE_REQUIRES,
+            'analyser': INSTALL_REQUIRES + ANALYSER_REQUIRES,
             },
 )

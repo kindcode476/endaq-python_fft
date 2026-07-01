@@ -142,6 +142,28 @@ class TestRFFT:
             fft.rfft(df, norm=normalization, output=output, nfft=n)
 
 
+class TestDCTDST:
+    """Regression tests: dct() must wrap scipy.fft.dct and dst() must wrap
+    scipy.fft.dst (they were previously swapped)."""
+
+    @pytest.fixture
+    def df_wave(self):
+        t = np.arange(64) / 64
+        return pd.DataFrame({'A': np.sin(2 * np.pi * 4 * t)}, index=t)
+
+    def test_dct_matches_scipy(self, df_wave):
+        import scipy.fft
+        npt.assert_almost_equal(
+            fft.dct(df_wave, norm="ortho")['A'].to_numpy(),
+            scipy.fft.dct(df_wave['A'].to_numpy(), norm="ortho"))
+
+    def test_dst_matches_scipy(self, df_wave):
+        import scipy.fft
+        npt.assert_almost_equal(
+            fft.dst(df_wave, norm="ortho")['A'].to_numpy(),
+            scipy.fft.dst(df_wave['A'].to_numpy(), norm="ortho"))
+
+
 @pytest.fixture
 def df_test():
     # Build Time Array

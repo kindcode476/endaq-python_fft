@@ -21,6 +21,10 @@ This package consists of several submodules, you can read more about how these a
 * `endaq.ide` ([readme](https://github.com/MideTechnology/endaq-python/tree/main/endaq/ide)): High-level utility functions to aid in importing and inspecting enDAQ IDE recording files.
 * `endaq.plot` ([readme](https://github.com/MideTechnology/endaq-python/tree/main/endaq/plot)):  A package comprising a collection of plotting utilities for sensor data analysis.
 
+This fork additionally contains `fft_analyser` ([readme](fft_analyser/README.md)): an interactive
+Dash UI built on `endaq.calc.fft`, with ground-truth test signals that verify the FFT pipeline
+end-to-end. Run it with `pip install dash` followed by `python -m fft_analyser`.
+
 ## Docs
 
 The docs for this package can be found [here](https://docs.endaq.com/en/latest/).

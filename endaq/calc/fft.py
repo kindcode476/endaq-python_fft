@@ -124,7 +124,7 @@ def fft(
     """
     Perform the FFT of the data in ``df``, using SciPy's FFT method from :py:func:`scipy.fft.fft`.  If the in ``df`` is all real,
     then the output will be symmetrical between positive and negative frequencies, and it is instead recommended that
-    you use the :py:func:`endaq.calc.fft.fft` method.
+    you use the :py:func:`endaq.calc.fft.rfft` method.
 
     :param df: The input data
     :param output: The type of the output of the FFT. Default is "magnitude".  "magnitude" will return the
@@ -346,7 +346,7 @@ def dct(
 
     return pd.DataFrame(
         data={
-            c: scipy.fft.dst(
+            c: scipy.fft.dct(
                 df[c].to_numpy(),
                 n=nfft,
                 norm=norm,
@@ -411,7 +411,7 @@ def dst(
 
     return pd.DataFrame(
         data={
-            c: scipy.fft.dct(
+            c: scipy.fft.dst(
                 df[c].to_numpy(),
                 n=nfft,
                 norm=norm,

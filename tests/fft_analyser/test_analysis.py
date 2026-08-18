@@ -101,6 +101,15 @@ class TestEnergyAndBroadband:
 
 class TestPeakDetection:
 
+    def test_minus_40dbc_harmonic_is_detected(self):
+        # regression: a 1% (-40 dBc) line sat exactly on the old -40 dB
+        # prominence default and was dropped
+        sig = signals.distorted_tone(harmonics={2: 0.02, 3: 0.01})
+        spectrum = compute_spectrum(sig.data, window="hann")
+        peaks = find_spectral_peaks(spectrum)
+        result = compare_to_expected(peaks, sig.expected_peaks)
+        assert result["pass"].all(), result.to_string()
+
     def test_noise_produces_no_false_ground_truth_peaks(self):
         sig = signals.multi_tone(noise_rms=0.2)
         spectrum = compute_spectrum(sig.data, window="hann")

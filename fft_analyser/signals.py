@@ -26,6 +26,9 @@ __all__ = [
     "impulse",
     "linear_chirp",
     "white_noise",
+    "distorted_tone",
+    "quantized_tone",
+    "two_tone",
     "TEST_SIGNALS",
 ]
 
@@ -43,6 +46,9 @@ class TestSignal:
     expected_peaks: typing.List[typing.Tuple[float, float]] = field(default_factory=list)
     #: for broadband signals: (f_low, f_high) where energy should concentrate
     expected_band: typing.Optional[typing.Tuple[float, float]] = None
+    #: for noise: the single-sided PSD floor (units²/Hz) the analyser must
+    #: report independent of window and FFT length (= 2*sigma²/fs)
+    expected_psd_level: typing.Optional[float] = None
 
 
 def _time(fs: float, duration: float) -> np.ndarray:
@@ -198,18 +204,86 @@ def white_noise(
     t = _time(fs, duration)
     return TestSignal(
         name="White noise",
-        description=f"Gaussian noise, rms {rms:g}",
+        description=(f"Gaussian noise, rms {rms:g} - single-sided PSD floor "
+                     f"= 2σ²/fs = {2 * rms ** 2 / fs:.3g} units²/Hz"),
         data=pd.DataFrame({"signal": _noise(len(t), rms, seed)},
                           index=pd.Index(t, name="time (s)")),
         fs=fs,
         expected_band=(0.0, fs / 2),
+        expected_psd_level=2 * rms ** 2 / fs,
     )
+
+
+def distorted_tone(
+        freq: float = 100.0,
+        amp: float = 1.0,
+        harmonics: typing.Optional[typing.Dict[int, float]] = None,
+        fs: float = 8192.0,
+        duration: float = 2.0,
+) -> TestSignal:
+    """
+    Fundamental plus harmonics at known relative levels - ground truth for
+    THD: ``THD = sqrt(sum(r_h^2))`` where ``r_h`` is each harmonic's
+    amplitude relative to the fundamental.
+    """
+    if harmonics is None:
+        harmonics = {2: 0.02, 3: 0.01}  # THD = sqrt(5)% ≈ 2.236%
+    freqs = [freq] + [h * freq for h in harmonics]
+    amps = [amp] + [r * amp for r in harmonics.values()]
+    sig = multi_tone(freqs, amps, fs=fs, duration=duration)
+    thd = float(np.sqrt(sum(r * r for r in harmonics.values())))
+    sig.name = "Distorted tone"
+    sig.description = (f"{amp:g} @ {freq:g} Hz with harmonics "
+                       + ", ".join(f"H{h}={r * 100:g}%" for h, r in harmonics.items())
+                       + f" (THD = {thd * 100:.3f}%)")
+    return sig
+
+
+def quantized_tone(
+        bits: int = 8,
+        freq: float = 100.372,
+        amp: float = 1.0,
+        fs: float = 8192.0,
+        duration: float = 2.0,
+) -> TestSignal:
+    """
+    An ideal ``bits``-bit quantized full-scale sine - ground truth for
+    SINAD/ENOB: an ideal quantizer yields ``SINAD = 6.02*bits + 1.76`` dB,
+    i.e. ENOB = ``bits``.  The default frequency is deliberately unrelated
+    to the bin grid so quantization error spreads as noise rather than
+    collapsing onto harmonic bins.
+    """
+    sig = multi_tone((freq,), (amp,), fs=fs, duration=duration)
+    q = amp / (2 ** (bits - 1))
+    sig.data["signal"] = np.round(sig.data["signal"] / q) * q
+    sig.name = f"Quantized tone ({bits}-bit)"
+    sig.description = (f"{amp:g} @ {freq:g} Hz through an ideal {bits}-bit "
+                       f"quantizer (expect ENOB ≈ {bits})")
+    return sig
+
+
+def two_tone(
+        f1: float = 100.0,
+        f2: float = 110.0,
+        amps: typing.Tuple[float, float] = (1.0, 1.0),
+        fs: float = 2048.0,
+        duration: float = 2.0,
+) -> TestSignal:
+    """Two closely spaced tones - the classic frequency-resolution probe."""
+    sig = multi_tone((f1, f2), amps, fs=fs, duration=duration)
+    sig.name = "Two-tone"
+    sig.description = (f"Tones at {f1:g} & {f2:g} Hz - resolving them needs "
+                       f"bin width (x NENBW) below {abs(f2 - f1):g} Hz")
+    return sig
 
 
 #: Registry used by the UI dropdown; each entry builds a signal with defaults.
 TEST_SIGNALS: typing.Dict[str, typing.Callable[..., TestSignal]] = {
     "Multi-tone (50/120/240 Hz)": multi_tone,
     "Single tone (100 Hz)": single_tone,
+    "Two-tone (100/110 Hz)": two_tone,
+    "Distorted tone (THD 2.24%)": distorted_tone,
+    "Quantized tone (8-bit)": quantized_tone,
     "DC + tone": dc_plus_tone,
     "Square wave (50 Hz)": square_wave,
     "Impulse": impulse,

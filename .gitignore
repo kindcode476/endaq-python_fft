@@ -244,3 +244,6 @@ fabric.properties
 
 # Test files
 *_scratch.ipynb
+
+# local secrets for the FFT analyser live deployment
+.env

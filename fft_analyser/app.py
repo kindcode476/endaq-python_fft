@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import datetime as _dt
 import io
+import os
 
 import numpy as np
 import pandas as pd
@@ -245,7 +246,8 @@ def create_app() -> Dash:
         html.Div(id="cloud-panel", className="controls", style={"display": "none"},
                  children=[
             _control("API host", dcc.Dropdown(
-                id="x2-base", value=PRIMARY_BASE, clearable=False,
+                id="x2-base", clearable=False,
+                value=os.environ.get("X2_BASE_URL", PRIMARY_BASE),
                 options=[{"label": "api.x2wireless.com (primary)", "value": PRIMARY_BASE},
                          {"label": "api.tritoncloud.se (secondary)", "value": SECONDARY_BASE},
                          {"label": "legacy login.x2wireless.com path",
@@ -310,12 +312,13 @@ def create_app() -> Dash:
                     options=[{"label": " off", "value": "off"},
                              {"label": " on", "value": "on"}])),
                 _control("Check for new uploads every", dcc.Dropdown(
-                    id="live-interval", value=60, clearable=False,
-                    options=[{"label": "15 s", "value": 15},
-                             {"label": "30 s", "value": 30},
+                    id="live-interval", clearable=False,
+                    value=int(os.environ.get("X2_POLL_SECONDS", 300)),
+                    options=[{"label": "30 s", "value": 30},
                              {"label": "1 min", "value": 60},
                              {"label": "5 min", "value": 300},
-                             {"label": "15 min", "value": 900}])),
+                             {"label": "15 min", "value": 900},
+                             {"label": "1 hour", "value": 3600}])),
                 html.Div(id="live-status", className="cloud-status"),
             ]),
         ]),

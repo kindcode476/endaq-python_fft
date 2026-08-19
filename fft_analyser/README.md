@@ -102,6 +102,50 @@ socket.
 Nothing asks a sensor to measure or upload — the client reads files the
 devices have **already** uploaded to the cloud.
 
+### Going live
+
+Live data needs the app to run somewhere with a network route to the API
+host — a sandbox or a locked-down CI runner will not do, and the failure
+looks like an auth error when it is really a blocked TLS tunnel. Check
+before you debug credentials:
+
+```bash
+cp fft_analyser/deploy/.env.example .env && chmod 600 .env   # fill it in
+set -a && . ./.env && set +a
+python -m fft_analyser.preflight
+```
+
+Preflight walks the four things that actually stop a connection — imports,
+DNS, the TLS tunnel, then login and site access — and prints the sensor
+addresses you need for `X2_MONITORS`. It is read-only and stops before
+sending credentials if the host is unreachable.
+
+Then run it:
+
+```bash
+python -m fft_analyser --serve --connect --host 0.0.0.0 --port 8050
+```
+
+`--serve` runs Waitress (a production WSGI server) instead of Flask's
+development server; `--connect` logs in at startup from the `X2_*`
+environment variables and preloads `X2_MONITORS`, so the page opens
+already pointed at the site. Credentials come from the environment rather
+than the browser — out of the URL, out of shell history, and off the
+screen. A container build is in [`deploy/Dockerfile`](deploy/Dockerfile).
+
+**What "live" means here.** These sensors upload a waveform on their own
+schedule (`config_mlt_auto_interval`) — it is not a continuous stream. The
+live feed polls the file listing and refreshes when a *newer* upload
+appears, so set `X2_POLL_SECONDS` to match the upload interval; polling
+faster only burns API calls. Two other operational facts: download links
+are pre-signed and expire **one hour** after listing (the client always
+re-lists before downloading, so this only matters if you cache them
+yourself), and the session cookie will eventually expire — reconnect from
+the Live monitors panel if reads start failing with 403.
+
+Making a sensor measure *sooner* would require `POST .../config` to change
+its interval, which this client deliberately cannot do.
+
 ### Analysis defaults for measured data
 
 Real accelerometers carry a static gravity component: in the vendor's own

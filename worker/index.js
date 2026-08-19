@@ -202,15 +202,23 @@ function isVibration(address) {
   return false;
 }
 
-function siteId(env) {
-  const site = env.X2_SITE_ID;
+/**
+ * Which site to read: the request's ?site= parameter wins, falling back to
+ * the X2_SITE_ID variable. Letting the client pick is safe because the
+ * site ID is not a secret and X2 enforces the real boundary server-side -
+ * the account can only ever read sites it has permission for (anything
+ * else comes back 403). The page uses /api/sites to offer the choice.
+ */
+function siteId(env, url) {
+  const fromQuery = url && url.searchParams.get("site");
+  const site = (fromQuery && fromQuery.trim()) || env.X2_SITE_ID;
   if (!site) {
     throw new UpstreamError(
-      "X2_SITE_ID is not set. Call /api/sites to see which sites this " +
-      "account can read and what their IDs are, then set X2_SITE_ID to the " +
-      "one you want.", 503);
+      "No site selected. Call /api/sites to see which sites this account " +
+      "can read, then pass ?site=<id> (the page does this for you) or set " +
+      "the X2_SITE_ID variable to pin one.", 503);
   }
-  return encodeURIComponent(String(site));
+  return encodeURIComponent(String(site).trim());
 }
 
 /**
@@ -235,8 +243,9 @@ async function listSites(env) {
   };
 }
 
-async function listMonitors(env) {
-  const payload = await x2Get(env, `site/${siteId(env)}/address`);
+async function listMonitors(env, url) {
+  const site = siteId(env, url);
+  const payload = await x2Get(env, `site/${site}/address`);
   const addresses = asList(payload, "Addresslist");
   const monitors = addresses.filter(isVibration).map(a => ({
     address: String(a.Address ?? ""),
@@ -245,13 +254,13 @@ async function listMonitors(env) {
     lastUpload: (a.ExtraInfo || [])
       .find(e => e.ExtraRawKey === "extra_last_upload")?.ExtraValue ?? null,
   }));
-  return { site: env.X2_SITE_ID, count: monitors.length, monitors,
+  return { site: decodeURIComponent(site), count: monitors.length, monitors,
            totalAddresses: addresses.length };
 }
 
-async function listFiles(env, address) {
+async function listFiles(env, url, address) {
   const payload = await x2Get(
-    env, `site/${siteId(env)}/address/${encodeURIComponent(address)}/files`);
+    env, `site/${siteId(env, url)}/address/${encodeURIComponent(address)}/files`);
   return asList(payload, "Files")
     .map(f => ({
       name: String(f.name || ""),
@@ -263,8 +272,8 @@ async function listFiles(env, address) {
     .sort((a, b) => String(b.changed || "").localeCompare(String(a.changed || "")));
 }
 
-async function fetchWaveform(env, address) {
-  const files = await listFiles(env, address);
+async function fetchWaveform(env, url, address) {
+  const files = await listFiles(env, url, address);
   if (!files.length) {
     throw new UpstreamError("This monitor has not uploaded a waveform yet.", 404);
   }
@@ -296,7 +305,8 @@ async function handleApi(request, env, url) {
       credentialsConfigured: Boolean(env.X2_USERNAME && env.X2_PASSWORD),
       next: site
         ? "Call /api/monitors to list the vibration monitors at this site."
-        : "X2_SITE_ID is not set — call /api/sites to find out what to use.",
+        : "No default site pinned — the page picks one from /api/sites; " +
+          "set X2_SITE_ID only if you want to pin a single site.",
       note: "Read-only. This Worker can only list sites and monitors, and " +
             "download waveforms the sensors already uploaded.",
     });
@@ -307,18 +317,18 @@ async function handleApi(request, env, url) {
   }
 
   if (url.pathname === "/api/monitors") {
-    return json(await listMonitors(env));
+    return json(await listMonitors(env, url));
   }
 
   const address = url.searchParams.get("address");
   if (url.pathname === "/api/files") {
     if (!address) throw new UpstreamError("address parameter is required", 400);
-    return json({ address, files: await listFiles(env, address) });
+    return json({ address, files: await listFiles(env, url, address) });
   }
 
   if (url.pathname === "/api/waveform") {
     if (!address) throw new UpstreamError("address parameter is required", 400);
-    const { bytes, meta } = await fetchWaveform(env, address);
+    const { bytes, meta } = await fetchWaveform(env, url, address);
     return new Response(bytes, {
       headers: {
         "content-type": "application/octet-stream",

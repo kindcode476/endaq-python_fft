@@ -52,13 +52,11 @@ them belongs in this repo.
 | `X2_USERNAME` | your X2 login name | yes |
 | `X2_PASSWORD` | your X2 password | yes |
 | `ACCESS_TOKEN` | a password you invent, to protect your own page | yes |
-| `X2_SITE_ID` | the site number, e.g. `3` | no |
 
-**Don't know your site number?** Set the three secrets first and deploy,
-then open `/api/sites?token=YOUR_TOKEN` in a browser. It lists every site
-the account can see, with its ID, name and sensor count — pick the one you
-want and use that ID. That call needs no site ID itself, which is the whole
-point of it.
+**You do not need to know your site number.** After connecting, the page
+lists every site the account can see and you pick one with a click. Set an
+`X2_SITE_ID` variable (Text, not secret) only if you want to pin a default
+site; `/api/sites?token=YOUR_TOKEN` shows the IDs.
 
 ### Either: in the browser (no terminal needed)
 

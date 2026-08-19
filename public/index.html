@@ -156,6 +156,23 @@
   .filenote { font-size: 11px; color: var(--ink-3); margin-top: 4px; line-height: 1.35; }
   .filenote.err { color: var(--fail); }
   .filenote.ok { color: var(--pass); }
+  .pick-grid { display: grid; gap: 6px; }
+  .pickbtn {
+    font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+    background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--rule); border-left: 3px solid var(--rule);
+    border-radius: 4px; padding: 6px 9px; width: 100%;
+  }
+  .pickbtn:hover { border-color: var(--trace); }
+  .pickbtn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .pickbtn[aria-pressed="true"] {
+    border-color: var(--trace); border-left-color: var(--trace);
+    box-shadow: 0 0 0 1px var(--trace) inset;
+  }
+  .pickbtn .pb-sub {
+    display: block; font-size: 10.5px; color: var(--ink-3); margin-top: 1px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
   .segbar { display: flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
@@ -331,11 +348,15 @@
         </div>
         <button id="connect" class="btn">Connect</button>
         <div id="live-status" class="filenote"></div>
-        <div class="field" id="monitor-field" hidden>
-          <label for="monitor">Monitor</label>
-          <select id="monitor"></select>
+        <div class="field" id="site-field" hidden>
+          <span class="legend">Site</span>
+          <div id="site-list" class="pick-grid"></div>
         </div>
-        <button id="fetch-wave" class="btn" hidden>Fetch latest waveform</button>
+        <div class="field" id="monitor-field" hidden>
+          <span class="legend">Monitors</span>
+          <div id="mon-list" class="pick-grid"></div>
+        </div>
+        <button id="fetch-wave" class="btn" hidden>Refresh waveform</button>
         <div class="field" id="refresh-field" hidden>
           <label for="refresh">Auto-refresh</label>
           <select id="refresh">
@@ -1360,41 +1381,110 @@ el("token").addEventListener("change", () => {
   try { localStorage.setItem(TOKEN_KEY, el("token").value.trim()); } catch { /* private mode */ }
 });
 
+let selectedSite = null;
+let selectedAddress = null;
+let selectedLabel = "";
+
+function pickButton(title, sub, pressed) {
+  const b = document.createElement("button");
+  b.className = "pickbtn";
+  b.setAttribute("aria-pressed", String(pressed));
+  b.appendChild(document.createTextNode(title));
+  if (sub) {
+    const s = document.createElement("span");
+    s.className = "pb-sub";
+    s.textContent = sub;
+    b.appendChild(s);
+  }
+  return b;
+}
+
 el("connect").addEventListener("click", async () => {
   setLiveNote("Connecting…");
+  el("site-field").hidden = true;
+  el("monitor-field").hidden = true;
+  el("fetch-wave").hidden = true;
+  el("refresh-field").hidden = true;
   try {
-    const info = await api("/api/monitors");
-    const sel = el("monitor");
-    sel.innerHTML = "";
-    for (const m of info.monitors) {
-      const o = document.createElement("option");
-      o.value = m.address;
-      o.textContent = m.name + (m.lastUpload ? ` — last upload ${m.lastUpload}` : "");
-      sel.appendChild(o);
+    const info = await api("/api/sites");
+    if (!info.sites.length) {
+      setLiveNote("Logged in, but this account cannot see any sites. It may "
+                  + "need permissions adding on the X2 side.", "err");
+      return;
     }
-    el("monitor-field").hidden = info.monitors.length === 0;
-    el("fetch-wave").hidden = info.monitors.length === 0;
-    el("refresh-field").hidden = info.monitors.length === 0;
-    if (!info.monitors.length) {
-      setLiveNote(`Connected, but none of the ${info.totalAddresses} sensors at `
-                  + `site ${info.site} look like vibration monitors. The `
-                  + `detector may need adjusting for this site.`, "err");
+    renderSites(info.sites);
+    // one site needs no choosing; otherwise wait for a click
+    if (info.sites.length === 1) {
+      await chooseSite(info.sites[0]);
     } else {
-      setLiveNote(`Connected. ${info.count} vibration monitor(s) at site ${info.site}.`, "ok");
+      setLiveNote(`Logged in. This account can see ${info.sites.length} sites — pick one.`, "ok");
     }
   } catch (err) {
     setLiveNote(`Could not connect: ${err.message}`, "err");
   }
 });
 
+function renderSites(sites) {
+  const list = el("site-list");
+  list.innerHTML = "";
+  for (const s of sites) {
+    const sub = [s.location, s.sensorCount != null ? `${s.sensorCount} sensors` : null]
+      .filter(Boolean).join(" · ");
+    const b = pickButton(s.name, sub, String(s.siteId) === String(selectedSite));
+    b.addEventListener("click", () => chooseSite(s));
+    list.appendChild(b);
+  }
+  el("site-field").hidden = sites.length < 2;
+}
+
+async function chooseSite(site) {
+  selectedSite = String(site.siteId);
+  selectedAddress = null;
+  for (const b of el("site-list").children)
+    b.setAttribute("aria-pressed", String(b.firstChild.textContent === site.name));
+  setLiveNote(`Loading monitors at ${site.name}…`);
+  try {
+    const info = await api(`/api/monitors?site=${encodeURIComponent(selectedSite)}`);
+    renderMonitors(info);
+  } catch (err) {
+    setLiveNote(`Could not list monitors: ${err.message}`, "err");
+  }
+}
+
+function renderMonitors(info) {
+  const list = el("mon-list");
+  list.innerHTML = "";
+  for (const m of info.monitors) {
+    const b = pickButton(m.name, m.lastUpload ? `last upload ${m.lastUpload}` : "", false);
+    b.addEventListener("click", () => {
+      selectedAddress = m.address;
+      selectedLabel = m.name;
+      for (const other of list.children) other.setAttribute("aria-pressed", String(other === b));
+      fetchLatestWaveform();
+    });
+    list.appendChild(b);
+  }
+  el("monitor-field").hidden = info.monitors.length === 0;
+  el("fetch-wave").hidden = true;          // shown once a monitor is chosen
+  el("refresh-field").hidden = info.monitors.length === 0;
+  if (!info.monitors.length) {
+    setLiveNote(`Connected, but none of the ${info.totalAddresses} sensors at `
+                + `site ${info.site} look like vibration monitors. The `
+                + `detector may need adjusting for this site.`, "err");
+  } else {
+    setLiveNote(`${info.count} vibration monitor(s) at site ${info.site} — pick one.`, "ok");
+  }
+}
+
 async function fetchLatestWaveform() {
-  const address = el("monitor").value;
-  if (!address) return;
-  const label = el("monitor").selectedOptions[0]?.textContent.split(" — ")[0] || address;
+  const address = selectedAddress;
+  if (!address || !selectedSite) return;
+  const label = selectedLabel || address;
   setLiveNote(`Fetching the latest waveform for ${label}…`);
   try {
     const { bytes, name, changed } = await api(
-      `/api/waveform?address=${encodeURIComponent(address)}`, { asBytes: true });
+      `/api/waveform?site=${encodeURIComponent(selectedSite)}`
+      + `&address=${encodeURIComponent(address)}`, { asBytes: true });
     const wave = decodeMemsBin(bytes);
     if (!wave.n) throw new Error("no samples decoded");
     loadedWave = wave;
@@ -1407,6 +1497,7 @@ async function fetchLatestWaveform() {
     el("noise").disabled = true;
     el("bin-status").className = "filenote";
     el("bin-status").textContent = "Showing a live waveform — clear it by loading a file.";
+    el("fetch-wave").hidden = false;
     setLiveNote(`${label}: ${wave.n.toLocaleString()} samples · ${wave.fs} Hz`
                 + (changed ? ` · uploaded ${changed}` : "")
                 + (wave.truncated ? " · truncated record" : ""), "ok");
@@ -1417,7 +1508,6 @@ async function fetchLatestWaveform() {
 }
 
 el("fetch-wave").addEventListener("click", fetchLatestWaveform);
-el("monitor").addEventListener("change", fetchLatestWaveform);
 
 el("refresh").addEventListener("change", () => {
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }

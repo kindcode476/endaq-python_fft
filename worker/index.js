@@ -33,6 +33,14 @@
  * Anything else falls through to the static assets in ./public
  */
 
+/**
+ * Bumped on every change that alters behaviour. /api/health returns it and
+ * the page footer shows its own copy, so "which version am I actually
+ * running?" is answerable by looking, not guessing. If the page footer and
+ * /api/health disagree, one of the two is stale.
+ */
+const WORKER_VERSION = "3-site-picker";
+
 const DEFAULT_BASE = "https://api.x2wireless.com";
 
 /** Product type codes that produce vibration waveforms. */
@@ -300,6 +308,7 @@ async function handleApi(request, env, url) {
     const site = env.X2_SITE_ID || null;
     return json({
       ok: true,
+      version: WORKER_VERSION,
       base: baseUrl(env),
       site,
       credentialsConfigured: Boolean(env.X2_USERNAME && env.X2_PASSWORD),

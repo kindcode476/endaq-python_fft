@@ -13,6 +13,13 @@ BIN2 = "/home/user/endaq-python_fft/fft_analyser/sample_data/pure_mems/1axis_z_1
 GOOD = {"u": "operator", "p": "hunter2"}
 COOKIE = "PHPSESSID=faketestsession"
 
+SITES = [
+    {"SiteID": "3", "Name": "Riverside Plant", "Description": "Main pumping station",
+     "Location": "Riverside", "AddressCount": 4},
+    {"SiteID": "11", "Name": "North Depot", "Description": "",
+     "Location": "North", "AddressCount": 12},
+]
+
 ADDRESSES = [
     {"Address": "1.MLT.0001", "Name": "Pump A drive end", "TypeInt": 202,
      "ExtraInfo": [{"ExtraRawKey": "extra_last_upload", "ExtraValue": "2026-08-19 17:05:00"},
@@ -72,6 +79,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         parts = path.split("/")
+        if parts == ["site"]:
+            self._json(SITES)
+            return
         if parts[:1] == ["site"] and parts[2:] == ["address"]:
             self._json(ADDRESSES)
             return

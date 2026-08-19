@@ -22,9 +22,13 @@
  *
  * Routes (all require the access token):
  *   GET /api/health                     config sanity, no secrets returned
+ *   GET /api/sites                      every site you can see, with its ID
  *   GET /api/monitors                   vibration monitors at the site
  *   GET /api/waveform?address=<addr>    newest uploaded .bin, raw bytes
  *   GET /api/files?address=<addr>       what that monitor has uploaded
+ *
+ * /api/sites deliberately does not need X2_SITE_ID: it is how you find out
+ * what to put there.
  *
  * Anything else falls through to the static assets in ./public
  */
@@ -200,8 +204,35 @@ function isVibration(address) {
 
 function siteId(env) {
   const site = env.X2_SITE_ID;
-  if (!site) throw new UpstreamError("X2_SITE_ID is not configured", 503);
+  if (!site) {
+    throw new UpstreamError(
+      "X2_SITE_ID is not set. Call /api/sites to see which sites this " +
+      "account can read and what their IDs are, then set X2_SITE_ID to the " +
+      "one you want.", 503);
+  }
   return encodeURIComponent(String(site));
+}
+
+/**
+ * Every site the account can see. Needs no configuration beyond the
+ * credentials, which is what makes it the way to discover X2_SITE_ID.
+ */
+async function listSites(env) {
+  const payload = await x2Get(env, "site");
+  const sites = asList(payload, "Sites").map(s => ({
+    siteId: s.SiteID ?? s.siteId ?? null,
+    name: s.Name || "(unnamed)",
+    description: s.Description || null,
+    location: s.Location || null,
+    sensorCount: s.AddressCount ?? null,
+  }));
+  return {
+    count: sites.length,
+    sites,
+    next: sites.length
+      ? "Set X2_SITE_ID to the siteId you want, then call /api/monitors."
+      : "This account cannot see any sites. Check the username and password.",
+  };
 }
 
 async function listMonitors(env) {
@@ -257,14 +288,22 @@ async function handleApi(request, env, url) {
   authorize(request, env);
 
   if (url.pathname === "/api/health") {
+    const site = env.X2_SITE_ID || null;
     return json({
       ok: true,
       base: baseUrl(env),
-      site: env.X2_SITE_ID || null,
+      site,
       credentialsConfigured: Boolean(env.X2_USERNAME && env.X2_PASSWORD),
-      note: "Read-only. This Worker can only list monitors and download " +
-            "waveforms the sensors already uploaded.",
+      next: site
+        ? "Call /api/monitors to list the vibration monitors at this site."
+        : "X2_SITE_ID is not set — call /api/sites to find out what to use.",
+      note: "Read-only. This Worker can only list sites and monitors, and " +
+            "download waveforms the sensors already uploaded.",
     });
+  }
+
+  if (url.pathname === "/api/sites") {
+    return json(await listSites(env));
   }
 
   if (url.pathname === "/api/monitors") {

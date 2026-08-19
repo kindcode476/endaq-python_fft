@@ -54,6 +54,12 @@ them belongs in this repo.
 | `ACCESS_TOKEN` | a password you invent, to protect your own page | yes |
 | `X2_SITE_ID` | the site number, e.g. `3` | no |
 
+**Don't know your site number?** Set the three secrets first and deploy,
+then open `/api/sites?token=YOUR_TOKEN` in a browser. It lists every site
+the account can see, with its ID, name and sensor count — pick the one you
+want and use that ID. That call needs no site ID itself, which is the whole
+point of it.
+
 ### Either: in the browser (no terminal needed)
 
 1. Go to **dash.cloudflare.com** and sign in.
@@ -110,9 +116,16 @@ creating a second one at a new URL.
 
 ## Step 6 — Check it can reach X2
 
+Each of these can be opened straight in a browser by adding
+`?token=YOUR_ACCESS_TOKEN`, or called with curl:
+
 ```bash
-curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-     https://endaq-python-fft.restless-bush-9121.workers.dev/api/monitors
+BASE=https://endaq-python-fft.restless-bush-9121.workers.dev
+AUTH="Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+curl -H "$AUTH" $BASE/api/health      # is it configured?
+curl -H "$AUTH" $BASE/api/sites       # which sites can this account see?
+curl -H "$AUTH" $BASE/api/monitors    # which monitors at the chosen site?
 ```
 
 What you should see: a list of your vibration monitors with their

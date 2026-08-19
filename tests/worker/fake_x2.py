@@ -20,6 +20,17 @@ SITES = [
      "Location": "North", "AddressCount": 12},
 ]
 
+# site 11 has seven vibration monitors, so the UI's handling of more than
+# five can be exercised; site 3 keeps the small mixed set.
+NORTH = [
+    {"Address": f"11.MLT.{n:04d}", "Name": name, "TypeInt": 202,
+     "ExtraInfo": [{"ExtraRawKey": "extra_last_upload",
+                    "ExtraValue": f"2026-08-19 1{n}:00:00"}]}
+    for n, name in enumerate(["Compressor 1", "Compressor 2", "Conveyor drive",
+                              "Mill gearbox", "Fan north", "Fan south",
+                              "Pump station"], start=1)
+]
+
 ADDRESSES = [
     {"Address": "1.MLT.0001", "Name": "Pump A drive end", "TypeInt": 202,
      "ExtraInfo": [{"ExtraRawKey": "extra_last_upload", "ExtraValue": "2026-08-19 17:05:00"},
@@ -83,7 +94,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(SITES)
             return
         if parts[:1] == ["site"] and parts[2:] == ["address"]:
-            self._json(ADDRESSES)
+            self._json(NORTH if parts[1] == "11" else ADDRESSES)
             return
         if parts[:1] == ["site"] and len(parts) == 5 and parts[2] == "address" and parts[4] == "files":
             addr = urllib.parse.unquote(parts[3])

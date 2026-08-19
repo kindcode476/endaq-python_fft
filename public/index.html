@@ -1,7 +1,8 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spectrum Bench</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 
 <style>
   :root {
@@ -78,11 +79,13 @@
   }
 
   * { box-sizing: border-box; }
+  /* class display rules would otherwise beat the hidden attribute */
+  [hidden] { display: none !important; }
   body {
     margin: 0;
     background: var(--paper);
     color: var(--ink);
-    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     font-size: 15px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
@@ -100,7 +103,7 @@
     color: var(--ink-2); font-size: 13.5px; margin: 0; max-width: 68ch;
   }
   .stamp {
-    margin-left: auto; font-family: "IBM Plex Mono", ui-monospace, monospace;
+    margin-left: auto; font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
     font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
     color: var(--ink-3); border: 1px solid var(--rule); border-radius: 3px;
     padding: 3px 8px; white-space: nowrap;
@@ -122,7 +125,7 @@
   }
   .group > h2 {
     margin: 0; padding: 8px 12px;
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
     font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em;
     text-transform: uppercase; color: var(--ink-3);
     background: var(--panel-2); border-bottom: 1px solid var(--rule-soft);
@@ -178,7 +181,7 @@
   }
   .pickbtn .pb-sub {
     display: block; font-size: 10.5px; color: var(--ink-3); margin-top: 1px;
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
   }
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
@@ -200,7 +203,7 @@
     padding: 9px 12px 10px; box-shadow: var(--shadow);
   }
   .cell .v {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
     font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em; color: var(--ink);
   }
@@ -227,7 +230,7 @@
     font-size: 12px; color: var(--ink-3); margin: 0;
   }
   .panel > header .note.mono {
-    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; font-size: 11.5px;
   }
   .plot-wrap { position: relative; padding: 8px 10px 6px; }
   canvas { display: block; width: 100%; }
@@ -235,7 +238,7 @@
     position: absolute; pointer-events: none; opacity: 0;
     transition: opacity .1s; background: var(--panel-2); color: var(--ink);
     border: 1px solid var(--rule); border-radius: 4px; padding: 5px 8px;
-    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; font-size: 11.5px;
     font-variant-numeric: tabular-nums; white-space: pre; box-shadow: var(--shadow);
     z-index: 5;
   }
@@ -264,7 +267,7 @@
   }
   .metrics.stale .metric .v { color: var(--ink-3); }
   .metric .v {
-    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 15px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; font-size: 15px;
     font-weight: 500; font-variant-numeric: tabular-nums;
   }
   .metric .k {
@@ -277,18 +280,18 @@
   th, td {
     text-align: right; padding: 7px 14px; white-space: nowrap;
     border-bottom: 1px solid var(--rule-soft);
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
     font-variant-numeric: tabular-nums;
   }
   th {
-    font-family: "IBM Plex Sans", sans-serif; font-size: 10.5px; font-weight: 600;
+    font-family: system-ui, sans-serif; font-size: 10.5px; font-weight: 600;
     letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3);
     border-bottom: 1px solid var(--rule);
   }
   tbody tr:last-child td { border-bottom: 0; }
   .chip {
     display: inline-block; padding: 1px 7px; border-radius: 3px;
-    font-family: "IBM Plex Sans", sans-serif; font-size: 11px; font-weight: 600;
+    font-family: system-ui, sans-serif; font-size: 11px; font-weight: 600;
     letter-spacing: 0.03em;
   }
   .chip.ok { color: var(--pass); border: 1px solid currentColor; }
@@ -301,7 +304,7 @@
     color: var(--ink-3); font-size: 12px; line-height: 1.6;
   }
   footer.colophon code {
-    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; font-size: 11.5px;
     color: var(--ink-2);
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -549,7 +552,7 @@
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
   Python <code>fft_analyser</code> module — same conventions, same test signals, same
-  ground-truth scoring. <code id="page-version">page v4-zoom</code>
+  ground-truth scoring. <code id="page-version">page v5-fast-load</code>
 </footer>
 
 <script>
@@ -1162,7 +1165,7 @@ function drawFrame(ctx, w, h, xs, ys, xLabel, yLabel, logX) {
   ctx.fillStyle = bg;
   ctx.fillRect(PAD.l, PAD.t, w - PAD.l - PAD.r, h - PAD.t - PAD.b);
 
-  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.font = '11px ui-monospace, monospace';
   ctx.strokeStyle = grid; ctx.lineWidth = 1;
   ctx.fillStyle = ink3;
 
@@ -1186,7 +1189,7 @@ function drawFrame(ctx, w, h, xs, ys, xLabel, yLabel, logX) {
   ctx.strokeStyle = rule;
   ctx.strokeRect(PAD.l + 0.5, PAD.t + 0.5, w - PAD.l - PAD.r - 1, h - PAD.t - PAD.b - 1);
 
-  ctx.font = '11px "IBM Plex Sans", sans-serif';
+  ctx.font = '11px system-ui, sans-serif';
   ctx.fillStyle = ink3;
   ctx.textAlign = "center"; ctx.textBaseline = "bottom";
   ctx.fillText(xLabel, PAD.l + (w - PAD.l - PAD.r) / 2, h - 2);
@@ -1854,14 +1857,14 @@ function drawSpectrum() {
     const x0 = xs.px(Math.max(sig.band[0], xs.lo)), x1 = xs.px(sig.band[1]);
     ctx.fillStyle = tok("--trace-soft");
     ctx.fillRect(x0, PAD.t, x1 - x0, plotH);
-    ctx.fillStyle = tok("--ink-3"); ctx.font = '10.5px "IBM Plex Mono", monospace';
+    ctx.fillStyle = tok("--ink-3"); ctx.font = '10.5px ui-monospace, monospace';
     ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.fillText("expected band", x0 + 5, PAD.t + 5);
   }
   // harmonic cursors
   if (state.harm === "on" && met.f0 > 0) {
     ctx.strokeStyle = tok("--rule"); ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
-    ctx.fillStyle = tok("--ink-3"); ctx.font = '10px "IBM Plex Mono", monospace';
+    ctx.fillStyle = tok("--ink-3"); ctx.font = '10px ui-monospace, monospace';
     ctx.textAlign = "center"; ctx.textBaseline = "top";
     for (let hI = 2; hI <= 9 && met.f0 * hI <= fMax; hI++) {
       const px = xs.px(met.f0 * hI);
@@ -1885,7 +1888,7 @@ function drawSpectrum() {
     ctx.beginPath(); ctx.moveTo(PAD.l, py); ctx.lineTo(w - PAD.r, py); ctx.stroke();
     ctx.setLineDash([]);
     // a backing plate keeps the label readable where it crosses the trace
-    ctx.font = '10.5px "IBM Plex Mono", monospace';
+    ctx.font = '10.5px ui-monospace, monospace';
     const label = "expected floor 2σ²/fs";
     const tw = ctx.measureText(label).width;
     ctx.fillStyle = tok("--plot-bg");

@@ -26,9 +26,12 @@
     "binding": "ASSETS"
   },
   "vars": {
-    // Not secret: the host and which site to read. Override per environment.
-    "X2_BASE_URL": "https://api.x2wireless.com",
-    "X2_SITE_ID": ""
+    // Not secret, so it lives here. Anything listed in "vars" is REWRITTEN
+    // on every deploy, which is why X2_SITE_ID is deliberately absent: set
+    // it in the Cloudflare dashboard (Settings -> Variables) and a deploy
+    // will leave it alone. Add it here instead only if you would rather
+    // keep it in version control.
+    "X2_BASE_URL": "https://api.x2wireless.com"
   },
   "observability": {
     "enabled": true

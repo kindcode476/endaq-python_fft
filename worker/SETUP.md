@@ -41,33 +41,48 @@ npx wrangler login
 A browser window opens; approve the access. This links the terminal to your
 Cloudflare account.
 
-## Step 3 — Tell it which site to read
+## Step 3 — Set the four values
 
-Open `wrangler.jsonc` and set your site ID:
+Three are secret and one is not, but they all go in the same place:
+**Cloudflare**. None of them goes in a file on your computer, and none of
+them belongs in this repo.
 
-```jsonc
-"vars": {
-  "X2_BASE_URL": "https://api.x2wireless.com",
-  "X2_SITE_ID": "3"          // <- your site number
-}
-```
+| Name | What it is | Secret? |
+|---|---|---|
+| `X2_USERNAME` | your X2 login name | yes |
+| `X2_PASSWORD` | your X2 password | yes |
+| `ACCESS_TOKEN` | a password you invent, to protect your own page | yes |
+| `X2_SITE_ID` | the site number, e.g. `3` | no |
 
-If you don't know the site ID, leave it for now — step 6 will tell you
-when it can't find anything, and the X2 portal URL usually contains it.
+### Either: in the browser (no terminal needed)
 
-These two are not secret, which is why they live in the file. The password
-does not go here.
+1. Go to **dash.cloudflare.com** and sign in.
+2. Open **Workers & Pages**, then click **endaq-python-fft**.
+3. Open the **Settings** tab, then **Variables and Secrets**.
+4. For each of the four rows above: **Add**, type the name exactly as
+   written, paste the value, and choose **Secret** (or tick **Encrypt**)
+   for the three marked secret. Choose **Text** for `X2_SITE_ID`.
+5. **Save** / **Deploy**.
 
-## Step 4 — Set the three secrets
+Once saved, a secret can never be read back — not by you, not by anyone
+with repo access. You can only replace it. That is the point.
 
-Secrets are encrypted by Cloudflare and never appear in the repo or in the
-page. Run each command; it prompts you to paste the value.
+### Or: from a terminal
 
 ```bash
-npx wrangler secret put X2_USERNAME     # your X2 API username
-npx wrangler secret put X2_PASSWORD     # your X2 API password
-npx wrangler secret put ACCESS_TOKEN    # a password YOU invent, see below
+npx wrangler secret put X2_USERNAME     # prompts, then encrypts
+npx wrangler secret put X2_PASSWORD
+npx wrangler secret put ACCESS_TOKEN
 ```
+
+Each command asks for the value rather than taking it on the command line,
+so it never lands in your shell history. Set `X2_SITE_ID` in the dashboard
+as above, or add it to `wrangler.jsonc` under `vars` if you would rather
+keep it in version control.
+
+> **Careful:** anything listed under `vars` in `wrangler.jsonc` is rewritten
+> on every deploy. `X2_SITE_ID` is deliberately not listed there, so a
+> deploy will not wipe the value you set in the dashboard.
 
 `ACCESS_TOKEN` is the password for *your page*. Without it, anyone who
 found the URL could read your machines' vibration data. Invent a long

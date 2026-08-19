@@ -25,13 +25,31 @@ Options: `--host`, `--port`, `--debug`.
 
 ### No-install version
 
-[`standalone.html`](standalone.html) is the same analyser ported to the
-browser — open the file directly, no Python, no server, no network. Its
-engine is a faithful port and is checked against the Python one: all seven
-windows' `S1`/`S2`/NENBW/scalloping agree to six decimals, and the tone
-metrics agree exactly (THD 2.2361 %, SINAD 33.010 dB, SFDR 33.979 dBc,
-8-bit ENOB 8.017). Use it for demos and quick checks; use the Python module
-for real data and batch work.
+[`public/index.html`](../public/index.html) is the same analyser ported to
+the browser — open the file directly, no Python, no server, no network. It
+also **decodes pureMEMS `.bin` waveforms in the browser**, so real records
+can be analysed with nothing installed; the file never leaves the machine.
+
+Its engine is a faithful port, checked against the Python one: all seven
+windows' `S1`/`S2`/NENBW/scalloping agree to six decimals, the tone metrics
+agree exactly (THD 2.2361 %, SINAD 33.010 dB, SFDR 33.979 dBc, 8-bit ENOB
+8.017), and the `.bin` decoder is **bit-exact** across every sample of both
+vendor sample files.
+
+One difference from the Python module: the browser FFT is radix-2, so a
+segment is the largest power of two that fits. The readout says how many
+samples were actually covered when that is fewer than the record holds.
+
+### Deploying the browser build
+
+`public/` is a static site — [`wrangler.jsonc`](../wrangler.jsonc) deploys
+it to Cloudflare Workers with `npx wrangler deploy`, or
+`npx wrangler pages deploy public` for Pages. There is **no build step**:
+leave the build command empty and set the output directory to `public`.
+
+The Dash app cannot be deployed this way — it is a Python server, and
+Workers/Pages run static assets and JavaScript. Host that on a machine with
+a Python runtime (see *Going live* below).
 
 ## The front panel
 

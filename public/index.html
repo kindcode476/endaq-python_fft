@@ -143,6 +143,19 @@
     outline: 2px solid var(--focus); outline-offset: 1px;
   }
   input[type="range"] { width: 100%; accent-color: var(--trace); }
+  .filepick {
+    width: 100%; font: inherit; font-size: 12px; color: var(--ink-2);
+    border: 1px dashed var(--rule); border-radius: 4px; padding: 6px;
+    background: var(--panel-2); cursor: pointer;
+  }
+  .filepick::file-selector-button {
+    font: inherit; font-size: 12px; margin-right: 8px; cursor: pointer;
+    border: 1px solid var(--rule); border-radius: 3px; padding: 2px 8px;
+    background: var(--panel); color: var(--ink-2);
+  }
+  .filenote { font-size: 11px; color: var(--ink-3); margin-top: 4px; line-height: 1.35; }
+  .filenote.err { color: var(--fail); }
+  .filenote.ok { color: var(--pass); }
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
   .segbar { display: flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
@@ -292,6 +305,16 @@
         <div class="field">
           <label for="noise">Added noise · rms <span id="noise-val">0.00</span></label>
           <input type="range" id="noise" min="0" max="0.5" step="0.01" value="0">
+        </div>
+        <div class="field">
+          <label for="binfile">Or open a pureMEMS <code>.bin</code> waveform</label>
+          <input type="file" id="binfile" accept=".bin" class="filepick">
+          <div id="bin-status" class="filenote">Decoded in your browser — the
+            file is never uploaded anywhere.</div>
+        </div>
+        <div class="field" id="axis-field" hidden>
+          <span class="legend">Axis</span>
+          <div class="segbar" id="binaxis" role="group" aria-label="Axis"></div>
         </div>
       </div>
     </section>
@@ -703,8 +726,13 @@ function parsevalError(x, fs) {
   const r = analyze(x, fs, { quantity: "psd", window: "rectangular", detrend: "none", averaging: "none" });
   let sum = 0; for (let k = 0; k < r.spectrum.length; k++) sum += r.spectrum[k];
   const rmsF = Math.sqrt(sum * r.binWidth);
-  let ms = 0; for (let i = 0; i < x.length; i++) ms += x[i] * x[i];
-  const rmsT = Math.sqrt(ms / x.length);
+  // This FFT is radix-2, so a record whose length is not a power of two is
+  // analysed over the largest power-of-two prefix. Compare the time-domain
+  // RMS over exactly those samples, or the check measures the truncation
+  // rather than the transform.
+  const used = Math.min(r.nperseg, x.length);
+  let ms = 0; for (let i = 0; i < used; i++) ms += x[i] * x[i];
+  const rmsT = Math.sqrt(ms / used);
   if (rmsT === 0) return rmsF === 0 ? 0 : Infinity;
   return Math.abs(rmsF - rmsT) / rmsT;
 }
@@ -858,6 +886,112 @@ function tones(freqs, amps, fs, dur) {
     y[i] = v;
   }
   return y;
+}
+
+/* ── pureMEMS .bin decoder ──────────────────────────────────────────
+   Port of fft_analyser/pure_mems.py, which is itself verified
+   sample-for-sample against the vendor's reference decoder. Prefix-coded,
+   delta-compressed samples; the header carries the ADC rate, the
+   resampling rate (the TRUE sample rate of the decoded waveform) and the
+   axis selection. Counts convert to m/s2 at +/-16 g full scale.        */
+
+const G_SCALE = 16 * 9.80665 / 0x8000;
+// prefix -> [data bits, bit value marking a negative number]
+const MEMS_PREFIX = {
+  "0": [6, 1], "10": [6, 0], "110": [7, 0],
+  "1110": [16, 1], "11110": [16, 1], "11111": [-1, 0],
+};
+const MEMS_AXIS = { "00": "XYZ", "01": "X", "10": "Y", "11": "Z" };
+
+function decodeMemsBin(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const nbits = bytes.length * 8;
+  let pos = 0;
+
+  const bit = i => (bytes[i >> 3] >> (7 - (i & 7))) & 1;
+
+  function readPrefix() {
+    let out = "";
+    for (let i = 0; i < 5; i++) {
+      if (pos >= nbits) { pos = nbits; return null; }
+      const b = bit(pos++);
+      out += b ? "1" : "0";
+      if (b === 0) return out;
+    }
+    return "11111";                      // five 1s: end of stream
+  }
+  function readUint(n) {
+    if (pos + n > nbits) return null;
+    let v = 0;
+    for (let i = 0; i < n; i++) v = v * 2 + bit(pos++);
+    return v;
+  }
+  function readValue(n, negMarker) {
+    if (pos + n > nbits) return null;
+    const sign = bit(pos);
+    const v = readUint(n);
+    if (v === null) return null;
+    return sign === negMarker ? v - Math.pow(2, n) : v;
+  }
+
+  // header: two prefix-coded unsigned ints, then 2 axis bits
+  const header = [];
+  for (let i = 0; i < 2; i++) {
+    const pfx = readPrefix();
+    if (pfx === null || MEMS_PREFIX[pfx][0] < 0)
+      throw new Error("truncated header — is this a pureMEMS .bin file?");
+    const v = readUint(MEMS_PREFIX[pfx][0]);
+    if (v === null) throw new Error("truncated header");
+    header.push(v);
+  }
+  let [samplingFreq, resamplingFreq] = header;
+  if (resamplingFreq === 0) resamplingFreq = samplingFreq;
+
+  const axisBits = "" + bit(pos) + bit(pos + 1);
+  pos += 2;
+  const axis = MEMS_AXIS[axisBits];
+  if (!axis) throw new Error(`unknown axis code ${axisBits}`);
+
+  const nAxes = axis === "XYZ" ? 3 : 1;
+  const channels = [], prev = [];
+  for (let a = 0; a < nAxes; a++) { channels.push([]); prev.push(0); }
+  const temperature = [];
+  let curAxis = 0, truncated = false;
+
+  for (;;) {
+    const pfx = readPrefix();
+    if (pfx === null) { truncated = true; break; }
+    const [nb, negMarker] = MEMS_PREFIX[pfx];
+    if (nb < 0) break;                             // clean end of stream
+    const value = readValue(nb, negMarker);
+    if (value === null) { truncated = true; break; }
+
+    if (pfx === "11110") { temperature.push(value / 16); continue; }
+
+    let acc;
+    if (channels[curAxis].length === 0) {
+      acc = value;                                 // first sample absolute
+    } else {
+      acc = value + prev[curAxis];                 // int16-wrapping deltas
+      if (acc > 32767) acc -= 65536;
+      else if (acc < -32768) acc += 65536;
+    }
+    channels[curAxis].push(acc * G_SCALE);
+    prev[curAxis] = acc;
+    if (nAxes === 3) curAxis = (curAxis + 1) % 3;
+  }
+
+  // a truncated three-axis record can end mid-triplet: keep whole samples
+  let n = channels[0].length;
+  if (nAxes === 3) n = Math.min(channels[0].length, channels[1].length, channels[2].length);
+  const names = axis === "XYZ" ? ["X", "Y", "Z"] : [axis];
+  const data = {};
+  names.forEach((nm, i) => { data[nm] = Float64Array.from(channels[i].slice(0, n)); });
+
+  return {
+    data, names, fs: resamplingFreq, samplingFreq, resamplingFreq, axis,
+    temperature, truncated, n,
+  };
 }
 
 const SIGNALS = {
@@ -1058,7 +1192,29 @@ el("noise").addEventListener("input", () => {
   render();
 });
 
+// a decoded .bin waveform, when one is loaded; it overrides the dropdown
+let loadedWave = null;
+let loadedAxis = null;
+let loadedName = "";
+
 function currentSignal() {
+  if (loadedWave) {
+    const axis = loadedAxis && loadedWave.data[loadedAxis]
+      ? loadedAxis : loadedWave.names[loadedWave.names.length - 1];
+    const w = loadedWave;
+    const temp = w.temperature.length
+      ? ` · ${(w.temperature.reduce((a, b) => a + b, 0) / w.temperature.length).toFixed(1)} °C`
+      : "";
+    return {
+      fs: w.fs,
+      y: w.data[axis],
+      units: "m/s²",
+      desc: `${loadedName} · axis ${axis} · ${w.fs} Hz · `
+            + `${(w.n / w.fs).toFixed(2)} s${temp}`
+            + (w.truncated ? " · record truncated" : ""),
+      peaks: [],                      // measured data has no ground truth
+    };
+  }
   const s = SIGNALS[sigSel.value]();
   const nr = +el("noise").value;
   if (nr > 0) {
@@ -1071,6 +1227,73 @@ function currentSignal() {
   }
   return s;
 }
+
+/* Loading a real waveform switches the analyser to measured-data
+   settings: accelerometers carry a static ~1 g offset that would
+   otherwise dominate the 0 Hz bin and every amplitude reading. */
+function applyRealDataDefaults() {
+  el("detrend").value = "mean";
+  el("nperseg").value = "8192";
+  el("averaging").value = "linear";
+}
+
+function renderAxisPicker() {
+  const bar = el("binaxis");
+  bar.innerHTML = "";
+  if (!loadedWave) { el("axis-field").hidden = true; return; }
+  el("axis-field").hidden = loadedWave.names.length < 2;
+  for (const nm of loadedWave.names) {
+    const b = document.createElement("button");
+    b.textContent = nm;
+    b.dataset.v = nm;
+    b.setAttribute("aria-pressed", String(nm === loadedAxis));
+    bar.appendChild(b);
+  }
+}
+
+el("binfile").addEventListener("change", async ev => {
+  const file = ev.target.files && ev.target.files[0];
+  const note = el("bin-status");
+  if (!file) return;
+  note.className = "filenote";
+  note.textContent = `Decoding ${file.name}…`;
+  try {
+    const buf = await file.arrayBuffer();
+    const wave = decodeMemsBin(buf);
+    if (!wave.n) throw new Error("no samples decoded");
+    loadedWave = wave;
+    window.__wave = wave;          // exposed so the cross-check test can read it
+    loadedName = file.name;
+    loadedAxis = wave.names[wave.names.length - 1];   // default to Z
+    applyRealDataDefaults();
+    renderAxisPicker();
+    note.className = "filenote ok";
+    note.textContent = `${file.name}: ${wave.n.toLocaleString()} samples · `
+      + `${wave.fs} Hz · axis ${wave.axis}`
+      + (wave.samplingFreq !== wave.resamplingFreq
+         ? ` (ADC ${wave.samplingFreq} Hz, resampled)` : "")
+      + (wave.truncated ? " · truncated record" : "");
+    sigSel.disabled = true;
+    el("noise").disabled = true;
+    render();
+  } catch (err) {
+    loadedWave = null;
+    sigSel.disabled = false;
+    el("noise").disabled = false;
+    renderAxisPicker();
+    note.className = "filenote err";
+    note.textContent = `Could not decode ${file.name}: ${err.message}`;
+    render();
+  }
+});
+
+el("binaxis").addEventListener("click", ev => {
+  const b = ev.target.closest("button");
+  if (!b || !loadedWave) return;
+  loadedAxis = b.dataset.v;
+  renderAxisPicker();
+  render();
+});
 
 function expectedInQuantity(f, aPk, quantity, enbw) {
   if (quantity === "amplitude_peak") return aPk;
@@ -1140,8 +1363,16 @@ function renderReadout(res, sig, par, rows, nExpected) {
   const verdict = !nExpected ? { t: "n/a", c: "" }
     : nFail ? { t: `${nFail}/${rows.length} fail`, c: "bad" }
             : { t: `${rows.length}/${rows.length} pass`, c: "ok" };
+  // radix-2 FFT: a segment is the largest power of two that fits, so say
+  // how many samples the analysis actually covered
+  const covered = Math.min(
+    sig.y.length,
+    res.nperseg + Math.round(res.nperseg * (1 - res.overlap)) * (res.nSegments - 1));
+  const sampleCell = covered < sig.y.length
+    ? [`${covered.toLocaleString()}`, `of ${sig.y.length.toLocaleString()} samples`]
+    : [sig.y.length.toLocaleString(), "samples"];
   const cells = [
-    [sig.y.length.toLocaleString(), "samples"],
+    sampleCell,
     [res.fs.toLocaleString() + " Hz", "sample rate"],
     [fmtNum(res.binWidth) + " Hz", "bin width Δf"],
     [fmtNum(res.enbwHz) + " Hz", "ENBW / bin"],
@@ -1226,7 +1457,8 @@ function drawTime() {
   const padY = (hi - lo) * 0.08 || 1;
   const xs = makeScale(0, n / sig.fs, PAD.l, w - PAD.r, false);
   const ys = makeScale(lo - padY, hi + padY, h - PAD.b, PAD.t, false);
-  drawFrame(ctx, w, h, xs, ys, "time (s)", "amplitude", false);
+  drawFrame(ctx, w, h, xs, ys, "time (s)",
+            `amplitude (${(cache.sig && cache.sig.units) || "units"})`, false);
   drawTrace(ctx, xs, ys, X, Y, tok("--trace"), 1.4, w - PAD.l - PAD.r, h - PAD.t - PAD.b);
   hookTip(cv, el("tip-time"), xs, ys, px => {
     const t = xs.inv(px), i = Math.round(t * sig.fs);
@@ -1259,8 +1491,9 @@ function drawSpectrum() {
   const xs = makeScale(logX ? Math.max(res.freqs[1], 1) : 0, fMax, PAD.l, w - PAD.r, logX);
   const ys = makeScale(lo - padY, hi + padY, h - PAD.b, PAD.t, false);
 
-  const unit = QUANTITIES[quantity].unit;
-  const yLabel = db ? `${QUANTITIES[quantity].label} (dB re 1 ${unit.replace("units", "unit")})`
+  const base = (cache.sig && cache.sig.units) || "units";
+  const unit = QUANTITIES[quantity].unit.replace("units", base);
+  const yLabel = db ? `${QUANTITIES[quantity].label} (dB re 1 ${unit})`
                     : `${QUANTITIES[quantity].label} (${unit})`;
   drawFrame(ctx, w, h, xs, ys, "frequency (Hz)", yLabel, logX);
 
@@ -1435,6 +1668,7 @@ new MutationObserver(drawAll).observe(document.documentElement, { attributes: tr
 
 document.fonts && document.fonts.ready.then(drawAll);
 render();
-window.__bench = { analyze, windowFigures, toneMetrics, findPeaks, psToQuantity, SIGNALS, bandRms, parsevalError };
+window.__bench = { analyze, windowFigures, toneMetrics, findPeaks, psToQuantity,
+                   SIGNALS, bandRms, parsevalError, decodeMemsBin };
 })();
 </script>

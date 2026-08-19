@@ -1,0 +1,23 @@
+{
+  // Static deployment of the browser build of the FFT analyser.
+  //
+  //   npx wrangler deploy          (Workers, serving ./public as assets)
+  //
+  // There is deliberately no build step: ./public/index.html is committed
+  // and self-contained, so the Cloudflare build command can be left empty.
+  // Set the project's build output directory to "public".
+  //
+  // Only the browser build deploys here. The Dash app (fft_analyser/app.py)
+  // is a Python server and cannot run on Workers or Pages - see
+  // fft_analyser/README.md for how to host that.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fft-analyser",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

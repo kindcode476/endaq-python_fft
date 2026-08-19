@@ -156,6 +156,13 @@
   .filenote { font-size: 11px; color: var(--ink-3); margin-top: 4px; line-height: 1.35; }
   .filenote.err { color: var(--fail); }
   .filenote.ok { color: var(--pass); }
+  .rz-btn {
+    margin-left: auto; font: inherit; font-size: 11.5px; padding: 2px 10px;
+    cursor: pointer; background: var(--panel-2); color: var(--ink-2);
+    border: 1px solid var(--rule); border-radius: 4px;
+  }
+  .rz-btn:hover { border-color: var(--trace); color: var(--trace); }
+  .rz-btn[hidden] { display: none; }
   .pick-grid { display: grid; gap: 6px; }
   .pickbtn {
     font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
@@ -481,6 +488,7 @@
       <header>
         <h2>Time domain</h2>
         <p class="note" id="sig-desc"></p>
+        <button id="reset-time" class="rz-btn" hidden>Reset zoom</button>
       </header>
       <div class="plot-wrap">
         <canvas id="c-time" height="200"></canvas>
@@ -491,6 +499,7 @@
     <section class="panel">
       <header>
         <h2>Spectrum</h2>
+        <button id="reset-spec" class="rz-btn" hidden>Reset zoom</button>
         <p class="note mono" id="win-info"></p>
       </header>
       <div class="plot-wrap">
@@ -540,7 +549,7 @@
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
   Python <code>fft_analyser</code> module — same conventions, same test signals, same
-  ground-truth scoring. <code id="page-version">page v3-site-picker</code>
+  ground-truth scoring. <code id="page-version">page v4-zoom</code>
 </footer>
 
 <script>
@@ -1554,6 +1563,7 @@ function render() {
   const par = parsevalError(sig.y, sig.fs);
   const met = toneMetrics(sig.y, sig.fs);
 
+  checkZoomSignature(sig);
   cache = { sig, res, peaks, met, quantity };
 
   el("sig-desc").textContent = sig.desc;
@@ -1667,23 +1677,122 @@ function drawAll() {
   drawSgram();
 }
 
+/* ── drag-to-zoom ────────────────────────────────────────────────────
+   Drag horizontally (mouse or finger) across a plot to zoom into that
+   span; the Reset button or a double-click restores the full view.
+   touch-action: pan-y keeps vertical finger-scrolling of the page alive
+   while horizontal drags select.                                      */
+
+const zoom = { time: null, spec: null };   // {x0, x1} in data units
+const scales = {};                          // live x-scale per plot, set at draw time
+let zoomSignature = "";                     // reset zoom when the signal changes
+
+function checkZoomSignature(sig) {
+  const s = `${sig.fs}:${sig.y.length}:${sig.y[0]}:${sig.y[sig.y.length - 1]}`;
+  if (s !== zoomSignature) {
+    zoomSignature = s;
+    setZoom("time", null);
+    setZoom("spec", null);
+  }
+}
+
+function setZoom(key, span) {
+  zoom[key] = span;
+  el(key === "time" ? "reset-time" : "reset-spec").hidden = !span;
+}
+
+function drawBand(cv, a, b) {
+  const ctx = cv.getContext("2d");
+  const H = parseInt(cv.getAttribute("height"), 10);
+  const x0 = Math.min(a, b), bw = Math.abs(b - a);
+  ctx.save();
+  ctx.fillStyle = tok("--trace-soft");
+  ctx.strokeStyle = tok("--trace");
+  ctx.lineWidth = 1;
+  ctx.fillRect(x0, PAD.t, bw, H - PAD.t - PAD.b);
+  ctx.strokeRect(x0 + 0.5, PAD.t + 0.5, bw - 1, H - PAD.t - PAD.b - 1);
+  ctx.restore();
+}
+
+function enableZoom(cvId, key, redraw, resetId) {
+  const cv = el(cvId);
+  cv.style.touchAction = "pan-y";
+  cv.style.cursor = "crosshair";
+  let drag = null;
+
+  cv.addEventListener("pointerdown", ev => {
+    const r = cv.getBoundingClientRect();
+    const px = ev.clientX - r.left, py = ev.clientY - r.top;
+    const H = parseInt(cv.getAttribute("height"), 10);
+    if (px < PAD.l || px > cv.clientWidth - PAD.r || py < PAD.t || py > H - PAD.b) return;
+    if (!scales[key]) return;
+    drag = { start: px, cur: px };
+    cv.dataset.dragging = "1";
+    try { cv.setPointerCapture(ev.pointerId); } catch { /* older browsers */ }
+    ev.preventDefault();
+  });
+
+  cv.addEventListener("pointermove", ev => {
+    if (!drag) return;
+    const r = cv.getBoundingClientRect();
+    drag.cur = Math.max(PAD.l, Math.min(cv.clientWidth - PAD.r, ev.clientX - r.left));
+    redraw();
+    drawBand(cv, drag.start, drag.cur);
+  });
+
+  const finish = ev => {
+    if (!drag) return;
+    const { start, cur } = drag;
+    drag = null;
+    delete cv.dataset.dragging;
+    try { cv.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
+    // a sub-8px movement is a tap, not a selection
+    if (Math.abs(cur - start) < 8) { redraw(); return; }
+    const xs = scales[key];
+    setZoom(key, { x0: xs.inv(Math.min(start, cur)), x1: xs.inv(Math.max(start, cur)) });
+    redraw();
+  };
+  cv.addEventListener("pointerup", finish);
+  cv.addEventListener("pointercancel", ev => {
+    drag = null;
+    delete cv.dataset.dragging;
+    try { cv.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
+    redraw();
+  });
+  cv.addEventListener("dblclick", () => { setZoom(key, null); redraw(); });
+  el(resetId).addEventListener("click", () => { setZoom(key, null); redraw(); });
+}
+
 function drawTime() {
   const { sig } = cache;
   const cv = el("c-time"); const { ctx, w, h } = fitCanvas(cv);
-  const n = sig.y.length, maxPts = Math.max(600, (w - PAD.l - PAD.r) * 2);
-  const stride = Math.max(1, Math.floor(n / maxPts));
+  const n = sig.y.length, fs = sig.fs;
+  const full = { x0: 0, x1: n / fs };
+  const v = zoom.time
+    ? { x0: Math.max(full.x0, Math.min(zoom.time.x0, zoom.time.x1)),
+        x1: Math.min(full.x1, Math.max(zoom.time.x0, zoom.time.x1)) }
+    : full;
+  // sample range on view; guard degenerate spans of under 8 samples
+  let i0 = Math.max(0, Math.floor(v.x0 * fs));
+  let i1 = Math.min(n, Math.ceil(v.x1 * fs) + 1);
+  if (i1 - i0 < 8) i1 = Math.min(n, i0 + 8);
+
+  const count = i1 - i0;
+  const maxPts = Math.max(600, (w - PAD.l - PAD.r) * 2);
+  const stride = Math.max(1, Math.floor(count / maxPts));
   const X = [], Y = [];
   let lo = Infinity, hi = -Infinity;
-  for (let i = 0; i < n; i += stride) {
+  for (let i = i0; i < i1; i += stride) {
     // min/max decimation keeps the envelope honest
     let mn = Infinity, mx = -Infinity;
-    for (let j = i; j < Math.min(i + stride, n); j++) { if (sig.y[j] < mn) mn = sig.y[j]; if (sig.y[j] > mx) mx = sig.y[j]; }
-    X.push(i / sig.fs, i / sig.fs); Y.push(mn, mx);
+    for (let j = i; j < Math.min(i + stride, i1); j++) { if (sig.y[j] < mn) mn = sig.y[j]; if (sig.y[j] > mx) mx = sig.y[j]; }
+    X.push(i / fs, i / fs); Y.push(mn, mx);
     if (mn < lo) lo = mn; if (mx > hi) hi = mx;
   }
   const padY = (hi - lo) * 0.08 || 1;
-  const xs = makeScale(0, n / sig.fs, PAD.l, w - PAD.r, false);
+  const xs = makeScale(v.x0, v.x1, PAD.l, w - PAD.r, false);
   const ys = makeScale(lo - padY, hi + padY, h - PAD.b, PAD.t, false);
+  scales.time = xs;
   drawFrame(ctx, w, h, xs, ys, "time (s)",
             `amplitude (${(cache.sig && cache.sig.units) || "units"})`, false);
   drawTrace(ctx, xs, ys, X, Y, tok("--trace"), 1.4, w - PAD.l - PAD.r, h - PAD.t - PAD.b);
@@ -1704,19 +1813,31 @@ function drawSpectrum() {
   const floor = top * 1e-11 + 1e-300;
   const disp = v => toDisplay(v, quantity, db, floor);
 
+  const fMax = res.freqs[res.freqs.length - 1];
+  const fullLo = logX ? Math.max(res.freqs[1], 1) : 0;
+  const vw = zoom.spec
+    ? { x0: Math.max(fullLo, Math.min(zoom.spec.x0, zoom.spec.x1)),
+        x1: Math.min(fMax, Math.max(zoom.spec.x0, zoom.spec.x1)) }
+    : { x0: fullLo, x1: fMax };
+  if (!(vw.x1 > vw.x0)) { vw.x0 = fullLo; vw.x1 = fMax; }
+
   const X = [], Y = [];
   const kStart = logX ? 1 : 0;
   let lo = Infinity, hi = -Infinity;
   for (let k = kStart; k < spec.length; k++) {
     const v = disp(spec[k]);
     X.push(res.freqs[k]); Y.push(v);
-    if (v < lo) lo = v; if (v > hi) hi = v;
+    // autoscale the y-axis to what is actually in view
+    if (res.freqs[k] >= vw.x0 && res.freqs[k] <= vw.x1) {
+      if (v < lo) lo = v; if (v > hi) hi = v;
+    }
   }
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
   if (db) lo = Math.max(lo, hi - 160);
   const padY = (hi - lo) * 0.08 || 1;
-  const fMax = res.freqs[res.freqs.length - 1];
-  const xs = makeScale(logX ? Math.max(res.freqs[1], 1) : 0, fMax, PAD.l, w - PAD.r, logX);
+  const xs = makeScale(vw.x0, vw.x1, PAD.l, w - PAD.r, logX);
   const ys = makeScale(lo - padY, hi + padY, h - PAD.b, PAD.t, false);
+  scales.spec = xs;
 
   const base = (cache.sig && cache.sig.units) || "units";
   const unit = QUANTITIES[quantity].unit.replace("units", base);
@@ -1867,6 +1988,7 @@ function lerpRgb(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1
 
 function hookTip(cv, tip, xs, ys, probe) {
   cv.onpointermove = ev => {
+    if (cv.dataset.dragging) { tip.style.opacity = 0; return; }
     const r = cv.getBoundingClientRect();
     const px = ev.clientX - r.left, py = ev.clientY - r.top;
     if (px < PAD.l || px > cv.clientWidth - PAD.r || py < PAD.t || py > parseInt(cv.getAttribute("height"), 10) - PAD.b) {
@@ -1893,6 +2015,8 @@ if (window.matchMedia) {
 }
 new MutationObserver(drawAll).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
+enableZoom("c-time", "time", drawTime, "reset-time");
+enableZoom("c-spec", "spec", drawSpectrum, "reset-spec");
 document.fonts && document.fonts.ready.then(drawAll);
 render();
 window.__bench = { analyze, windowFigures, toneMetrics, findPeaks, psToQuantity,

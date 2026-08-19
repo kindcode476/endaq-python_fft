@@ -1,0 +1,8 @@
+# Copy to .dev.vars in the repo root for local `npx wrangler dev`.
+# .dev.vars is gitignored. These values match tests/worker/fake_x2.py,
+# so the whole chain can be exercised without touching a real site.
+ACCESS_TOKEN=test-token-abc123
+X2_USERNAME=operator
+X2_PASSWORD=hunter2
+X2_BASE_URL=http://127.0.0.1:9099
+X2_SITE_ID=3

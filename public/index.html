@@ -320,6 +320,35 @@
     </section>
 
     <section class="group">
+      <h2>Live monitors</h2>
+      <div class="group-body">
+        <div class="field">
+          <label for="token">Access token</label>
+          <input type="password" id="token" class="text-input"
+                 placeholder="token for this deployment" autocomplete="off">
+          <div class="filenote">Kept in this browser only. Live data is off
+            until a token is set on the Worker.</div>
+        </div>
+        <button id="connect" class="btn">Connect</button>
+        <div id="live-status" class="filenote"></div>
+        <div class="field" id="monitor-field" hidden>
+          <label for="monitor">Monitor</label>
+          <select id="monitor"></select>
+        </div>
+        <button id="fetch-wave" class="btn" hidden>Fetch latest waveform</button>
+        <div class="field" id="refresh-field" hidden>
+          <label for="refresh">Auto-refresh</label>
+          <select id="refresh">
+            <option value="0">off</option>
+            <option value="300">every 5 min</option>
+            <option value="900">every 15 min</option>
+            <option value="3600">every hour</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="group">
       <h2>Analysis</h2>
       <div class="group-body">
         <div class="field">
@@ -1294,6 +1323,114 @@ el("binaxis").addEventListener("click", ev => {
   renderAxisPicker();
   render();
 });
+
+/* ── live monitors, via this deployment's own /api/* routes ──────────
+   The page never talks to the X2 API directly: it cannot hold the
+   password, and the browser would refuse the cross-origin call anyway.
+   The Worker holds the credentials and performs the read.            */
+
+const TOKEN_KEY = "spectrum-bench-token";
+let refreshTimer = null;
+
+function setLiveNote(text, cls = "") {
+  const n = el("live-status");
+  n.className = "filenote" + (cls ? " " + cls : "");
+  n.textContent = text;
+}
+
+async function api(path, { asBytes = false } = {}) {
+  const token = el("token").value.trim();
+  if (!token) throw new Error("enter the access token first");
+  const resp = await fetch(path, { headers: { authorization: `Bearer ${token}` } });
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try { detail = (await resp.json()).error || detail; } catch { /* keep status */ }
+    if (resp.status === 401) detail = "the access token was not accepted";
+    throw new Error(detail);
+  }
+  if (!asBytes) return resp.json();
+  return {
+    bytes: await resp.arrayBuffer(),
+    name: resp.headers.get("x-waveform-name") || "waveform.bin",
+    changed: resp.headers.get("x-waveform-changed") || "",
+  };
+}
+
+el("token").addEventListener("change", () => {
+  try { localStorage.setItem(TOKEN_KEY, el("token").value.trim()); } catch { /* private mode */ }
+});
+
+el("connect").addEventListener("click", async () => {
+  setLiveNote("Connecting…");
+  try {
+    const info = await api("/api/monitors");
+    const sel = el("monitor");
+    sel.innerHTML = "";
+    for (const m of info.monitors) {
+      const o = document.createElement("option");
+      o.value = m.address;
+      o.textContent = m.name + (m.lastUpload ? ` — last upload ${m.lastUpload}` : "");
+      sel.appendChild(o);
+    }
+    el("monitor-field").hidden = info.monitors.length === 0;
+    el("fetch-wave").hidden = info.monitors.length === 0;
+    el("refresh-field").hidden = info.monitors.length === 0;
+    if (!info.monitors.length) {
+      setLiveNote(`Connected, but none of the ${info.totalAddresses} sensors at `
+                  + `site ${info.site} look like vibration monitors. The `
+                  + `detector may need adjusting for this site.`, "err");
+    } else {
+      setLiveNote(`Connected. ${info.count} vibration monitor(s) at site ${info.site}.`, "ok");
+    }
+  } catch (err) {
+    setLiveNote(`Could not connect: ${err.message}`, "err");
+  }
+});
+
+async function fetchLatestWaveform() {
+  const address = el("monitor").value;
+  if (!address) return;
+  const label = el("monitor").selectedOptions[0]?.textContent.split(" — ")[0] || address;
+  setLiveNote(`Fetching the latest waveform for ${label}…`);
+  try {
+    const { bytes, name, changed } = await api(
+      `/api/waveform?address=${encodeURIComponent(address)}`, { asBytes: true });
+    const wave = decodeMemsBin(bytes);
+    if (!wave.n) throw new Error("no samples decoded");
+    loadedWave = wave;
+    window.__wave = wave;
+    loadedName = `${label} · ${name}`;
+    loadedAxis = wave.names[wave.names.length - 1];
+    applyRealDataDefaults();
+    renderAxisPicker();
+    sigSel.disabled = true;
+    el("noise").disabled = true;
+    el("bin-status").className = "filenote";
+    el("bin-status").textContent = "Showing a live waveform — clear it by loading a file.";
+    setLiveNote(`${label}: ${wave.n.toLocaleString()} samples · ${wave.fs} Hz`
+                + (changed ? ` · uploaded ${changed}` : "")
+                + (wave.truncated ? " · truncated record" : ""), "ok");
+    render();
+  } catch (err) {
+    setLiveNote(`Could not fetch: ${err.message}`, "err");
+  }
+}
+
+el("fetch-wave").addEventListener("click", fetchLatestWaveform);
+el("monitor").addEventListener("change", fetchLatestWaveform);
+
+el("refresh").addEventListener("change", () => {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  const seconds = +el("refresh").value;
+  // The sensors upload on their own schedule, so polling faster than that
+  // only costs API calls. Anything under 5 minutes is not offered.
+  if (seconds > 0) refreshTimer = setInterval(fetchLatestWaveform, seconds * 1000);
+});
+
+try {
+  const saved = localStorage.getItem(TOKEN_KEY);
+  if (saved) el("token").value = saved;
+} catch { /* private mode */ }
 
 function expectedInQuantity(f, aPk, quantity, enbw) {
   if (quantity === "amplitude_peak") return aPk;

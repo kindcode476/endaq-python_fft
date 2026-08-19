@@ -43,13 +43,32 @@ samples were actually covered when that is fewer than the record holds.
 ### Deploying the browser build
 
 `public/` is a static site — [`wrangler.jsonc`](../wrangler.jsonc) deploys
-it to Cloudflare Workers with `npx wrangler deploy`, or
-`npx wrangler pages deploy public` for Pages. There is **no build step**:
-leave the build command empty and set the output directory to `public`.
+it to Cloudflare Workers with `npx wrangler deploy`. There is **no build
+step**: leave the build command empty and set the output directory to
+`public`.
 
 The Dash app cannot be deployed this way — it is a Python server, and
 Workers/Pages run static assets and JavaScript. Host that on a machine with
 a Python runtime (see *Going live* below).
+
+### Live monitors from the deployed page
+
+A browser page cannot hold an API password, and browsers forbid calling
+another origin's API, so the deployed page needs a server-side middleman to
+read live data. [`worker/index.js`](../worker/index.js) is that middleman:
+a Cloudflare Worker that holds the credentials as encrypted secrets,
+performs the same read-only calls as `x2_client.py`, and hands the browser
+raw waveform bytes to decode locally.
+
+It is **not** a path proxy — it exposes a fixed set of operations
+(`/api/monitors`, `/api/files`, `/api/waveform`), so no browser request can
+reach the endpoints that change device settings. Access is gated on a token
+you set; without it, live data refuses to work and the page stays a
+file-analysis tool.
+
+Step-by-step setup: [`worker/SETUP.md`](../worker/SETUP.md). The whole
+chain can be exercised locally against [`tests/worker/fake_x2.py`](../tests/worker/fake_x2.py)
+without touching a real site.
 
 ## The front panel
 

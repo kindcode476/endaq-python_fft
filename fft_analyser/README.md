@@ -68,6 +68,64 @@ for real data and batch work.
 | Linear chirp | energy confined to 20–400 Hz | leakage; spectrogram ridge |
 | White noise | PSD floor = 2σ²/fs | density scaling, window/length invariance |
 
+## Real data: pureMEMS waveforms and the X2 Cloud
+
+### Sources
+
+- **pureMEMS `.bin`** — drop up to five vendor waveform files onto the
+  UI. [`pure_mems.py`](pure_mems.py) decodes the prefix-coded,
+  delta-compressed format to m/s². It reproduces the vendor's reference
+  decoder **exactly** on their own sample files (verified sample-for-sample
+  in `tests/fft_analyser/test_pure_mems.py`) and runs ~20× faster, because
+  it walks the bit stream by index instead of re-slicing it.
+- **X2 Cloud** — connect to a site and pull the latest uploaded waveform
+  for up to five monitors.
+
+### The cloud client is read-only by construction
+
+[`x2_client.py`](x2_client.py) can only read:
+
+- every data request goes through one `_get()` that issues `GET` and
+  refuses any path outside the allowlist;
+- the two mutating endpoints in the API — `POST .../control/{cmd}`
+  (relays, acknowledge, enable/disable inputs) and `POST .../config`
+  (device settings, including measurement interval and duration) — have
+  **no method in this module at all**;
+- the only `POST` is `login`, which the API requires for a session cookie
+  and which does not reach any device. `logout` is deliberately absent so
+  no request can invalidate a session another tool is using.
+
+`tests/fft_analyser/test_x2_client.py` asserts these properties, including
+that requesting a control or config path raises rather than opening a
+socket.
+
+Nothing asks a sensor to measure or upload — the client reads files the
+devices have **already** uploaded to the cloud.
+
+### Analysis defaults for measured data
+
+Real accelerometers carry a static gravity component: in the vendor's own
+three-axis sample the DC vector is **1.043 g**, four times larger than the
+entire 10–1000 Hz vibration content. Left in, it lands in the 0 Hz bin and
+dominates every amplitude and overall-RMS reading. Selecting a real-data
+source therefore switches the analyser to `detrend="mean"`, 8192-sample
+segments and linear averaging. Use `detrend="none"` only when the DC level
+is itself the measurement (checking sensor orientation, say).
+
+The monitor bank reports the **10–1000 Hz band RMS** (the ISO 20816
+machine-vibration band) as the overall level, plus crest factor, DC offset
+in g, and temperature.
+
+```python
+from fft_analyser.monitors import MonitorBank, overall_levels
+
+bank = MonitorBank()                       # holds up to 5 monitors
+bank.add_file("waveform.bin")              # offline
+bank.connect(user, password, base_url, site_id)   # or read-only cloud
+bank.load_from_cloud([addr1, addr2])
+print(overall_levels(bank, axis="Z"))
+```
+
 ## Library API
 
 ```python

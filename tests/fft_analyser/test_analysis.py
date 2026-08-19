@@ -175,4 +175,6 @@ class TestAppSmoke:
         from fft_analyser.app import create_app
         app = create_app()
         assert app.layout is not None
-        assert len(app.callback_map) == 2
+        # csv upload, panel visibility, bin upload, cloud connect, cloud fetch,
+        # bank refresh, monitor select, live config, live poll, main analysis
+        assert len(app.callback_map) == 10

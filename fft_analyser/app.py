@@ -12,11 +12,17 @@ single-tone quality metrics (THD, THD+N, SNR, SINAD, ENOB, SFDR), a
 spectrogram, and - because every built-in test signal carries its ground
 truth - a live verification table scoring the analyser against known
 spectral content.
+
+Four data sources are available: the built-in ground-truth test signals,
+a CSV upload, pureMEMS ``.bin`` waveforms, and a bank of up to five live
+monitors read from the X2 Cloud API.  The cloud path is **read-only** -
+see :py:mod:`fft_analyser.x2_client`.
 """
 
 from __future__ import annotations
 
 import base64
+import datetime as _dt
 import io
 
 import numpy as np
@@ -41,6 +47,18 @@ from .analysis import (
     parseval_rms_error,
 )
 from .metrics import tone_metrics
+from .monitors import (
+    ISO_BAND,
+    MAX_MONITORS,
+    REAL_DATA_DEFAULTS,
+    MonitorBank,
+    overall_levels,
+)
+from .x2_client import PRIMARY_BASE, SECONDARY_BASE
+
+#: The live monitor bank. Waveforms are megabytes each, so they stay in
+#: process rather than round-tripping through a browser store.
+BANK = MonitorBank(MAX_MONITORS)
 
 # palette roles (validated reference palette, light mode)
 SURFACE = "#fcfcfb"
@@ -97,6 +115,38 @@ def _tile(value_id: str, label: str) -> html.Div:
 def _control(label: str, component, wide: bool = False) -> html.Div:
     return html.Div([html.Label(label, className="ctl-label"), component],
                     className="ctl ctl-wide" if wide else "ctl")
+
+
+def _monitor_card(mon, axis, selected: bool) -> html.Button:
+    """
+    One monitor in the strip - a button, so the whole tile selects it.
+    State reads before the number: colour rail, then level, then identity.
+    """
+    s = mon.summary(axis)
+    sel = " active" if selected else ""
+    if s.get("error"):
+        return html.Button(
+            id={"type": "mon-btn", "key": mon.key}, n_clicks=0,
+            className=f"mon bad{sel}", children=[
+                html.Div(s["name"], className="mon-name", title=s["name"]),
+                html.Div("—", className="mon-val"),
+                html.Div(s["error"], className="mon-sub"),
+            ])
+    # a truncated record is still usable, but say so
+    cls = "warn" if s["truncated"] else "ok"
+    captured = s["captured"].strftime("%d %b %H:%M") if s["captured"] else "—"
+    sub = f"{s['axis']} · {s['fs']:.0f} Hz · {s['duration']:.1f} s · {captured}"
+    if s["truncated"]:
+        sub += " · truncated"
+    return html.Button(
+        id={"type": "mon-btn", "key": mon.key}, n_clicks=0,
+        className=f"mon {cls}{sel}", children=[
+            html.Div(s["name"], className="mon-name", title=s["name"]),
+            html.Div(f"{s['band_rms']:.3g} m/s²", className="mon-val"),
+            html.Div(f"band RMS {ISO_BAND[0]:g}–{ISO_BAND[1]:g} Hz · crest "
+                     f"{s['crest']:.1f}", className="mon-sub"),
+            html.Div(sub, className="mon-sub"),
+        ])
 
 
 def _build_signal(name: str, noise_rms: float) -> signals.TestSignal:
@@ -167,7 +217,9 @@ def create_app() -> Dash:
             _control("Source", dcc.RadioItems(
                 id="source", value="builtin",
                 options=[{"label": " Test signal", "value": "builtin"},
-                         {"label": " Uploaded CSV", "value": "upload"}],
+                         {"label": " CSV upload", "value": "upload"},
+                         {"label": " pureMEMS .bin", "value": "bin"},
+                         {"label": " Live monitors", "value": "cloud"}],
                 className="radio")),
             _control("Test signal", dcc.Dropdown(
                 id="signal-name", clearable=False,
@@ -182,6 +234,90 @@ def create_app() -> Dash:
                 id="upload", className="upload",
                 children=html.Div(id="upload-label",
                                   children="Drop or select a file")), wide=True),
+            _control("Upload .bin waveforms (up to 5)", dcc.Upload(
+                id="upload-bin", multiple=True, className="upload",
+                children=html.Div(id="upload-bin-label",
+                                  children="Drop or select pureMEMS .bin files")),
+                wide=True),
+        ]),
+
+        # ── X2 Cloud connection (read-only) ──
+        html.Div(id="cloud-panel", className="controls", style={"display": "none"},
+                 children=[
+            _control("API host", dcc.Dropdown(
+                id="x2-base", value=PRIMARY_BASE, clearable=False,
+                options=[{"label": "api.x2wireless.com (primary)", "value": PRIMARY_BASE},
+                         {"label": "api.tritoncloud.se (secondary)", "value": SECONDARY_BASE},
+                         {"label": "legacy login.x2wireless.com path",
+                          "value": "https://login.x2wireless.com/TritonCloud/webapp_mobile/api"}]),
+                wide=True),
+            _control("Username", dcc.Input(id="x2-user", type="text",
+                                           placeholder="API user",
+                                           className="text-input")),
+            _control("Password", dcc.Input(id="x2-pass", type="password",
+                                           placeholder="API password",
+                                           className="text-input")),
+            _control("Site ID", dcc.Input(id="x2-site", type="text",
+                                          placeholder="e.g. 3",
+                                          className="text-input")),
+            _control("​", html.Button("Connect (read-only)", id="x2-connect",
+                                      n_clicks=0, className="btn")),
+            _control(f"Monitors (choose up to {MAX_MONITORS})", dcc.Dropdown(
+                id="x2-monitors", multi=True, placeholder="connect first",
+                options=[]), wide=True),
+            _control("​", html.Button("Fetch latest waveforms", id="x2-fetch",
+                                      n_clicks=0, className="btn")),
+            html.Div(id="x2-status", className="cloud-status"),
+        ]),
+
+        # ── the monitor bank ──
+        html.Div(id="bank-panel", style={"display": "none"}, children=[
+            html.Div(className="card", children=[
+                html.H2("Monitor bank"),
+                html.P(f"Up to {MAX_MONITORS} monitors. Overall level is the "
+                       f"{ISO_BAND[0]:g}–{ISO_BAND[1]:g} Hz band RMS (ISO 20816 band), "
+                       "computed with the gravity offset removed.",
+                       className="hint"),
+                html.Div(id="monitor-strip", className="monitor-strip"),
+                dash_table.DataTable(
+                    id="bank-table",
+                    style_as_list_view=True,
+                    style_table={"overflowX": "auto"},
+                    style_header={
+                        "backgroundColor": SURFACE, "color": MUTED,
+                        "fontFamily": FONT, "fontSize": "12px",
+                        "fontWeight": "600", "borderBottom": f"1px solid {BASELINE}"},
+                    style_cell={
+                        "backgroundColor": SURFACE, "color": INK,
+                        "fontFamily": FONT, "fontSize": "13px",
+                        "padding": "7px 12px", "textAlign": "right",
+                        "borderBottom": f"1px solid {GRID}"},
+                    style_cell_conditional=[
+                        {"if": {"column_id": "monitor"}, "textAlign": "left"},
+                        {"if": {"column_id": "status"}, "textAlign": "left"},
+                    ]),
+            ]),
+            html.Div(className="controls", children=[
+                _control("Axis", dcc.RadioItems(
+                    id="active-axis", value="Z", className="radio",
+                    options=[{"label": f" {a}", "value": a} for a in ("X", "Y", "Z")])),
+                _control("Compare monitors", dcc.RadioItems(
+                    id="overlay", value="off", className="radio",
+                    options=[{"label": " off", "value": "off"},
+                             {"label": " overlay spectra", "value": "on"}])),
+                _control("Live feed", dcc.RadioItems(
+                    id="live", value="off", className="radio",
+                    options=[{"label": " off", "value": "off"},
+                             {"label": " on", "value": "on"}])),
+                _control("Check for new uploads every", dcc.Dropdown(
+                    id="live-interval", value=60, clearable=False,
+                    options=[{"label": "15 s", "value": 15},
+                             {"label": "30 s", "value": 30},
+                             {"label": "1 min", "value": 60},
+                             {"label": "5 min", "value": 300},
+                             {"label": "15 min", "value": 900}])),
+                html.Div(id="live-status", className="cloud-status"),
+            ]),
         ]),
 
         html.Div(className="controls", children=[
@@ -291,6 +427,9 @@ def create_app() -> Dash:
                 ]),
         ]),
         dcc.Store(id="uploaded-data"),
+        dcc.Store(id="bank-version", data=0),
+        dcc.Store(id="active-monitor", data=None),
+        dcc.Interval(id="live-tick", interval=60_000, disabled=True),
     ])
 
     _add_css(app)
@@ -309,6 +448,194 @@ def create_app() -> Dash:
         return ({"records": df.reset_index().to_dict("records"),
                  "index": df.index.name, "name": filename},
                 f"Loaded: {filename} ({len(df)} rows)", "upload")
+
+    # ── source-dependent panel visibility ──
+
+    @app.callback(Output("cloud-panel", "style"),
+                  Output("bank-panel", "style"),
+                  Output("detrend", "value"),
+                  Output("nperseg", "value"),
+                  Output("averaging", "value"),
+                  Input("source", "value"))
+    def toggle_panels(source):
+        show = {"display": "flex"}
+        hide = {"display": "none"}
+        bank_show = {"display": "block"}
+        if source in ("cloud", "bin"):
+            # measured accelerometer data: strip the ~1 g static offset and
+            # average, or the 0 Hz bin dominates every reading
+            return (show if source == "cloud" else hide, bank_show,
+                    REAL_DATA_DEFAULTS["detrend"],
+                    REAL_DATA_DEFAULTS["nperseg"],
+                    REAL_DATA_DEFAULTS["averaging"])
+        # synthetic signals are exact: leave them untouched and unaveraged
+        return hide, hide, "none", 0, "linear"
+
+    # ── .bin uploads populate the bank ──
+
+    @app.callback(Output("upload-bin-label", "children"),
+                  Output("bank-version", "data", allow_duplicate=True),
+                  Output("source", "value", allow_duplicate=True),
+                  Input("upload-bin", "contents"),
+                  State("upload-bin", "filename"),
+                  State("bank-version", "data"),
+                  prevent_initial_call=True)
+    def load_bin_uploads(contents_list, filenames, version):
+        if not contents_list:
+            return dash.no_update, dash.no_update, dash.no_update
+        BANK.clear()
+        loaded, failed = [], []
+        for contents, name in zip(contents_list, filenames or []):
+            try:
+                _, payload = contents.split(",", 1)
+                mon = BANK.add_bytes(base64.b64decode(payload), name)
+                (loaded if mon.ok else failed).append(name)
+            except Exception:
+                failed.append(name)
+        msg = f"Loaded {len(loaded)} waveform(s)"
+        if failed:
+            msg += f" · failed: {', '.join(failed)}"
+        return msg, (version or 0) + 1, "bin"
+
+    # ── X2 Cloud: connect (read-only) ──
+
+    @app.callback(Output("x2-monitors", "options"),
+                  Output("x2-status", "children"),
+                  Output("x2-status", "className"),
+                  Input("x2-connect", "n_clicks"),
+                  State("x2-base", "value"),
+                  State("x2-user", "value"),
+                  State("x2-pass", "value"),
+                  State("x2-site", "value"),
+                  prevent_initial_call=True)
+    def connect_cloud(_clicks, base, user, password, site_id):
+        if not (user and password and site_id):
+            return [], "Enter username, password and site ID.", "cloud-status err"
+        try:
+            found = BANK.connect(user, password, base, site_id)
+        except Exception as exc:
+            return [], f"Connection failed: {exc}", "cloud-status err"
+        options = [{"label": f"{a.get('Name') or a.get('Address')} "
+                             f"({a.get('Address')})",
+                    "value": str(a.get("Address"))} for a in found]
+        if not options:
+            return [], (f"Connected to site {site_id}, but no vibration monitors "
+                        "were found there."), "cloud-status err"
+        return options, (f"Connected read-only. {len(options)} vibration monitor(s) "
+                         f"at site {site_id}. Select up to {MAX_MONITORS}, then "
+                         "fetch."), "cloud-status ok"
+
+    # ── X2 Cloud: fetch already-uploaded waveforms ──
+
+    @app.callback(Output("x2-status", "children", allow_duplicate=True),
+                  Output("x2-status", "className", allow_duplicate=True),
+                  Output("bank-version", "data", allow_duplicate=True),
+                  Input("x2-fetch", "n_clicks"),
+                  State("x2-monitors", "value"),
+                  State("bank-version", "data"),
+                  prevent_initial_call=True)
+    def fetch_cloud(_clicks, addresses, version):
+        if not addresses:
+            return "Select at least one monitor first.", "cloud-status err", dash.no_update
+        try:
+            mons = BANK.load_from_cloud(addresses[:MAX_MONITORS])
+        except Exception as exc:
+            return f"Fetch failed: {exc}", "cloud-status err", dash.no_update
+        ok = [m for m in mons if m.ok]
+        bad = [f"{m.name}: {m.error}" for m in mons if not m.ok]
+        msg = f"Fetched {len(ok)} of {len(mons)} waveform(s)."
+        cls = "cloud-status ok" if ok else "cloud-status err"
+        if bad:
+            msg += " Problems — " + "; ".join(bad)
+            cls = "cloud-status err" if not ok else "cloud-status"
+        return msg, cls, (version or 0) + 1
+
+    # ── the bank view ──
+
+    @app.callback(Output("monitor-strip", "children"),
+                  Output("bank-table", "data"),
+                  Output("bank-table", "columns"),
+                  Output("active-monitor", "data"),
+                  Output("active-axis", "options"),
+                  Output("active-axis", "value"),
+                  Input("bank-version", "data"),
+                  Input("active-axis", "value"),
+                  Input("active-monitor", "data"),
+                  State("active-monitor", "data"))
+    def refresh_bank(_version, axis, _selected, current):
+        mons = list(BANK)
+        if not mons:
+            return ([html.Div("No monitors loaded.", className="hint")],
+                    [], [], None, [{"label": " Z", "value": "Z"}], "Z")
+
+        keys = [m.key for m in mons]
+        value = current if current in keys else keys[0]
+
+        cards = [_monitor_card(m, axis, m.key == value) for m in mons]
+        table = overall_levels(mons, axis)
+        rows = table.round(4).to_dict("records")
+        cols = [{"name": c, "id": c} for c in table.columns]
+
+        active = BANK.get(value)
+        axes = active.axes if active and active.axes else ["Z"]
+        axis_options = [{"label": f" {a}", "value": a} for a in axes]
+        axis_value = axis if axis in axes else axes[-1]
+        return cards, rows, cols, value, axis_options, axis_value
+
+    # ── clicking a monitor tile selects it ──
+
+    @app.callback(Output("active-monitor", "data", allow_duplicate=True),
+                  Input({"type": "mon-btn", "key": dash.ALL}, "n_clicks"),
+                  prevent_initial_call=True)
+    def select_monitor(_clicks):
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return dash.no_update
+        # Rebuilding the strip re-fires this callback for every freshly
+        # rendered button with n_clicks=0. Only a real click carries a
+        # non-zero count; anything else would reset the selection.
+        if not ctx.triggered[0].get("value"):
+            return dash.no_update
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict):
+            return dash.no_update
+        return triggered.get("key")
+
+    # ── live feed: poll for newer uploads (read-only) ──
+
+    @app.callback(Output("live-tick", "disabled"),
+                  Output("live-tick", "interval"),
+                  Input("live", "value"),
+                  Input("live-interval", "value"),
+                  Input("source", "value"))
+    def configure_live(live, seconds, source):
+        # only the cloud source has anything new to poll for
+        on = live == "on" and source == "cloud"
+        return (not on), int(seconds or 60) * 1000
+
+    @app.callback(Output("bank-version", "data", allow_duplicate=True),
+                  Output("live-status", "children"),
+                  Input("live-tick", "n_intervals"),
+                  State("bank-version", "data"),
+                  State("live", "value"),
+                  prevent_initial_call=True)
+    def poll_live(_ticks, version, live):
+        if live != "on" or BANK.client is None:
+            return dash.no_update, ""
+        stamp = _dt.datetime.now().strftime("%H:%M:%S")
+        addresses = [m.address for m in BANK if m.address]
+        if not addresses:
+            return dash.no_update, f"Live: nothing to poll (checked {stamp})"
+        try:
+            before = {m.key: m.captured for m in BANK}
+            BANK.load_from_cloud(addresses)
+        except Exception as exc:
+            return dash.no_update, f"Live: check failed at {stamp} — {exc}"
+        fresh = [m.name for m in BANK if m.captured != before.get(m.key)]
+        if fresh:
+            return (version or 0) + 1, (f"Live: new upload(s) at {stamp} — "
+                                        + ", ".join(fresh))
+        return dash.no_update, f"Live: no new uploads (checked {stamp})"
 
     @app.callback(
         Output("time-plot", "figure"),
@@ -342,12 +669,36 @@ def create_app() -> Dash:
         Input("npeaks", "value"),
         Input("harmonics", "value"),
         Input("uploaded-data", "data"),
+        Input("bank-version", "data"),
+        Input("active-monitor", "data"),
+        Input("active-axis", "value"),
+        Input("overlay", "value"),
     )
     def update(source, signal_name, noise, quantity, window, detrend,
                nperseg, overlap, averaging, pad, yscale, xscale, npeaks,
-               harmonics, uploaded):
+               harmonics, uploaded, _bank_version, active_monitor,
+               active_axis, overlay):
         expected_peaks, expected_band, expected_psd = [], None, None
-        if source == "upload" and uploaded:
+        units = "units"
+
+        if source in ("bin", "cloud"):
+            mon = BANK.get(active_monitor) if active_monitor else None
+            if mon is None and len(BANK):
+                mon = list(BANK)[0]
+            if mon is None or not mon.ok:
+                reason = (mon.error if mon is not None else
+                          "No waveforms loaded yet.")
+                return _idle_view(reason)
+            df = mon.channel(active_axis)
+            units = "m/s²"
+            captured = (mon.captured.strftime("%Y-%m-%d %H:%M")
+                        if mon.captured else "unknown time")
+            description = (f"{mon.name} · axis {df.columns[0]} · "
+                           f"{mon.waveform.fs:.0f} Hz · "
+                           f"{mon.waveform.duration:.2f} s · captured {captured}"
+                           + (f" · file {mon.file_name}" if mon.file_name else "")
+                           + (" · record truncated" if mon.waveform.truncated else ""))
+        elif source == "upload" and uploaded:
             df = pd.DataFrame(uploaded["records"]).set_index(uploaded["index"])
             description = f"Uploaded file: {uploaded['name']}"
         else:
@@ -381,12 +732,19 @@ def create_app() -> Dash:
             f"best for: {info.use_for}"
         )
 
-        time_fig = _time_figure(df)
-        spec_fig = _spectrum_figure(result, peaks_amp, expected_peaks,
-                                    expected_band, expected_psd, yscale,
-                                    xscale, harmonics == "on",
-                                    m.fundamental_freq)
-        sgram_fig = _spectrogram_figure(df)
+        time_fig = _time_figure(df, units)
+        if source in ("bin", "cloud") and overlay == "on" and len(BANK) > 1:
+            spec_fig = _overlay_figure(
+                active_axis, quantity, window, detrend,
+                int(nperseg) or None,
+                None if int(overlap) < 0 else int(overlap) / 100.0,
+                averaging, int(pad), yscale, xscale, units)
+        else:
+            spec_fig = _spectrum_figure(result, peaks_amp, expected_peaks,
+                                        expected_band, expected_psd, yscale,
+                                        xscale, harmonics == "on",
+                                        m.fundamental_freq, units)
+        sgram_fig = _spectrogram_figure(df, units)
         rows, cols = _table(peaks_amp, expected_peaks, detrend)
         verdict, verdict_style = _verdict(rows, expected_peaks)
         metrics_children = _metrics_grid(m, result, df)
@@ -400,7 +758,15 @@ def create_app() -> Dash:
     return app
 
 
-def _time_figure(df: pd.DataFrame) -> go.Figure:
+def _idle_view(message: str):
+    """Everything blank but the explanation - used before data is loaded."""
+    blank = _layout(go.Figure(), "", "")
+    blank.update_layout(height=200)
+    return (blank, blank, blank, [], [], [], message, "",
+            "—", "—", "—", "—", "—", "—", "n/a", {})
+
+
+def _time_figure(df: pd.DataFrame, units: str = "units") -> go.Figure:
     step = max(1, len(df) // MAX_TIME_POINTS)
     view = df.iloc[::step]
     fig = go.Figure()
@@ -409,14 +775,56 @@ def _time_figure(df: pd.DataFrame) -> go.Figure:
             x=view.index, y=view[c], name=str(c), mode="lines",
             line=dict(color=SERIES[i % len(SERIES)], width=2),
             hovertemplate="%{y:.4g}<extra>" + str(c) + "</extra>"))
-    fig = _layout(fig, "time (s)", "amplitude")
+    fig = _layout(fig, "time (s)", f"amplitude ({units})")
     fig.update_layout(showlegend=len(df.columns) > 1, height=260)
     return fig
 
 
+def _overlay_figure(axis, quantity, window, detrend, nperseg, overlap,
+                    averaging, pad, yscale, xscale, units) -> go.Figure:
+    """All loaded monitors' spectra on one axis - the comparison view."""
+    db = yscale == "db"
+    fig = go.Figure()
+    top = 0.0
+    curves = []
+    for mon in BANK:
+        if not mon.ok:
+            continue
+        df = mon.channel(axis)
+        res = analyze(df, quantity=quantity, window=window, detrend=detrend,
+                      nperseg=nperseg, overlap=overlap, averaging=averaging,
+                      pad_factor=pad)
+        series = res.spectrum[res.spectrum.columns[0]]
+        top = max(top, float(series.max()))
+        curves.append((mon.name, res, series))
+
+    floor = top * 1e-10 + 1e-300
+    for i, (name, res, series) in enumerate(curves):
+        values = series.to_numpy()
+        y = _to_db(values, quantity, floor) if db else values
+        fig.add_trace(go.Scatter(
+            x=series.index, y=y, name=name, mode="lines",
+            line=dict(color=SERIES[i % len(SERIES)], width=2),
+            hovertemplate="%{y:.4g}<extra>" + name + "</extra>"))
+
+    label = QUANTITIES[quantity][0]
+    unit = QUANTITIES[quantity][1].format(u=units)
+    fig = _layout(fig, "frequency (Hz)",
+                  f"{label} (dB re 1 {unit})" if db else f"{label} ({unit})")
+    fig.update_layout(height=380, showlegend=True)
+    if xscale == "log":
+        fig.update_xaxes(type="log")
+    return fig
+
+
+def _to_db(values, quantity, floor):
+    factor = 10.0 if QUANTITIES[quantity][2] else 20.0
+    return factor * np.log10(np.maximum(np.asarray(values, dtype=float), floor))
+
+
 def _spectrum_figure(result, peaks_amp, expected_peaks, expected_band,
                      expected_psd, yscale, xscale, show_harmonics,
-                     f0) -> go.Figure:
+                     f0, units="units") -> go.Figure:
     spectrum = result.spectrum
     quantity = result.quantity
     top = float(np.nanmax(spectrum.to_numpy()))
@@ -484,11 +892,10 @@ def _spectrum_figure(result, peaks_amp, expected_peaks, expected_band,
                       annotation_position="top right",
                       annotation_font=dict(color=INK_2, size=11))
 
-    unit = QUANTITIES[quantity][1].format(u="units")
+    unit = QUANTITIES[quantity][1].format(u=units)
     label = f"{result.ylabel} ({unit})"
     if db:
-        ref = QUANTITIES[quantity][1].format(u="unit")
-        label = f"{result.ylabel} (dB re 1 {ref})"
+        label = f"{result.ylabel} (dB re 1 {unit})"
     fig = _layout(fig, "frequency (Hz)", label)
     fig.update_layout(height=380)
     if xscale == "log":
@@ -496,14 +903,14 @@ def _spectrum_figure(result, peaks_amp, expected_peaks, expected_band,
     return fig
 
 
-def _spectrogram_figure(df: pd.DataFrame) -> go.Figure:
+def _spectrogram_figure(df: pd.DataFrame, units: str = "units") -> go.Figure:
     sgram = spectrogram(df)
     z = 10 * np.log10(np.maximum(sgram.to_numpy().T,
                                  np.nanmax(sgram.to_numpy()) * 1e-10 + 1e-300))
     fig = go.Figure(go.Heatmap(
         x=sgram.index.to_numpy(), y=sgram.columns.to_numpy(), z=z,
         colorscale=SEQ_BLUES,
-        colorbar=dict(title=dict(text="dB re units²/Hz",
+        colorbar=dict(title=dict(text=f"dB re 1 {units}²/Hz",
                                  font=dict(color=MUTED, size=11)),
                       tickfont=dict(color=MUTED, size=10), thickness=12),
         hovertemplate="t=%{x:.3f} s, f=%{y:.1f} Hz: %{z:.1f} dB<extra></extra>"))
@@ -526,7 +933,14 @@ def _fmt_db(v: float) -> str:
 
 def _metrics_grid(m, result, df) -> list:
     total_rms = band_rms(result)
-    return [
+    # single-tone figures are meaningless on broadband machine vibration;
+    # say so rather than printing an authoritative-looking ENOB
+    dominant = m.sfdr_dbc >= 20 if np.isfinite(m.sfdr_dbc) else True
+    header = [] if dominant else [html.Div(
+        "No dominant tone — the single-tone figures below (THD, SINAD, ENOB) "
+        "do not apply to broadband vibration.",
+        className="metrics-caveat")]
+    return header + [
         _metric_item("fundamental", f"{m.fundamental_freq:.2f} Hz"),
         _metric_item("fund. amplitude (pk)", f"{m.fundamental_peak:.4g}"),
         _metric_item("THD", "~0" if m.thd_pct < 1e-6 else f"{m.thd_pct:.3f} %"),
@@ -599,6 +1013,35 @@ def _add_css(app: Dash) -> None:
   .radio label { margin-right: 12px; font-size: 13px; color: %(INK_2)s; }
   .num-input { width: 70px; border: 1px solid %(BASELINE)s; border-radius: 6px;
                padding: 5px 8px; font: inherit; background: #fff; }
+  .text-input { width: 100%%; border: 1px solid %(BASELINE)s; border-radius: 6px;
+                padding: 5px 8px; font: inherit; background: #fff; }
+  .btn { font: inherit; font-size: 13px; padding: 6px 14px; cursor: pointer;
+         background: #2a78d6; color: #fff; border: 0; border-radius: 6px; }
+  .btn:hover { background: #1c5cab; }
+  .cloud-status { flex-basis: 100%%; font-size: 12.5px; color: %(INK_2)s;
+                  margin-top: 2px; }
+  .cloud-status.err { color: #d03b3b; }
+  .cloud-status.ok { color: #006300; }
+  .monitor-strip { display: grid; gap: 10px; margin: 4px 0 14px;
+                   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .mon {
+    border: 1px solid rgba(11,11,11,0.10); border-left: 3px solid %(MUTED)s;
+    border-radius: 8px; padding: 9px 12px; background: %(SURFACE)s;
+    font: inherit; text-align: left; cursor: pointer; width: 100%%;
+    transition: box-shadow .12s, border-color .12s;
+  }
+  .mon:hover { box-shadow: 0 1px 6px rgba(11,11,11,0.12); }
+  .mon:focus-visible { outline: 2px solid #2a78d6; outline-offset: 2px; }
+  .mon.active {
+    border-color: #2a78d6; box-shadow: 0 0 0 2px rgba(42,120,214,0.28);
+  }
+  .mon.ok { border-left-color: #006300; }
+  .mon.warn { border-left-color: #a8641a; }
+  .mon.bad { border-left-color: #d03b3b; }
+  .mon .mon-name { font-size: 13px; font-weight: 600; color: %(INK)s;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mon .mon-val { font-size: 17px; font-weight: 650; margin-top: 3px; }
+  .mon .mon-sub { font-size: 11px; color: %(MUTED)s; margin-top: 1px; }
   .upload { border: 1px dashed %(BASELINE)s; border-radius: 8px;
             padding: 7px 10px; font-size: 12px; color: %(INK_2)s;
             cursor: pointer; text-align: center; }
@@ -619,6 +1062,9 @@ def _add_css(app: Dash) -> None:
   .metric-value { font-size: 16px; font-weight: 650; color: %(INK)s; }
   .metric-label { font-size: 11px; color: %(MUTED)s; text-transform: uppercase;
                   letter-spacing: 0.04em; margin-top: 1px; }
+  .metrics-caveat { grid-column: 1 / -1; font-size: 12px; color: #a8641a;
+                    border: 1px solid currentColor; border-radius: 6px;
+                    padding: 5px 10px; }
 </style>
 </head>""" % {"PAGE": PAGE, "SURFACE": SURFACE, "INK": INK, "INK_2": INK_2,
               "MUTED": MUTED, "BASELINE": BASELINE, "FONT": FONT})

@@ -23,6 +23,16 @@ python -m fft_analyser        # then open http://127.0.0.1:8050
 
 Options: `--host`, `--port`, `--debug`.
 
+### No-install version
+
+[`standalone.html`](standalone.html) is the same analyser ported to the
+browser — open the file directly, no Python, no server, no network. Its
+engine is a faithful port and is checked against the Python one: all seven
+windows' `S1`/`S2`/NENBW/scalloping agree to six decimals, and the tone
+metrics agree exactly (THD 2.2361 %, SINAD 33.010 dB, SFDR 33.979 dBc,
+8-bit ENOB 8.017). Use it for demos and quick checks; use the Python module
+for real data and batch work.
+
 ## The front panel
 
 - **Quantity** — peak amplitude, RMS amplitude, power spectrum (u² RMS),

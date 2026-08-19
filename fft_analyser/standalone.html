@@ -1,0 +1,1440 @@
+<title>Spectrum Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+  :root {
+    --paper:        #eef1f6;
+    --panel:        #f8fafc;
+    --panel-2:      #ffffff;
+    --plot-bg:      #fbfcfe;
+    --ink:          #0f141b;
+    --ink-2:        #414d5c;
+    --ink-3:        #737f8e;
+    --rule:         #d5dbe4;
+    --rule-soft:    #e6eaf1;
+    --trace:        #2f6fd0;
+    --trace-soft:   rgba(47,111,208,0.13);
+    --graphite:     #4a5462;
+    --pass:         #0a7d3f;
+    --fail:         #c4342f;
+    --hold:         #a8641a;
+    --focus:        #2f6fd0;
+    --shadow:       0 1px 2px rgba(15,20,27,0.06), 0 1px 8px rgba(15,20,27,0.04);
+    --grid-c:       #e3e8f0;
+    --heat-0:       #f3f6fb;
+    --heat-1:       #2f6fd0;
+    --heat-2:       #0d2f66;
+  }
+  :root:not([data-theme="light"]) { }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0c0f14;
+      --panel:      #141920;
+      --panel-2:    #1b212a;
+      --plot-bg:    #10151c;
+      --ink:        #e8edf5;
+      --ink-2:      #a9b4c2;
+      --ink-3:      #7c8797;
+      --rule:       #2a323d;
+      --rule-soft:  #212831;
+      --trace:      #5f9dff;
+      --trace-soft: rgba(95,157,255,0.16);
+      --graphite:   #96a2b2;
+      --pass:       #3fbf72;
+      --fail:       #f0645e;
+      --hold:       #e2a03f;
+      --focus:      #5f9dff;
+      --shadow:     0 1px 2px rgba(0,0,0,0.4), 0 2px 12px rgba(0,0,0,0.28);
+      --grid-c:     #232b35;
+      --heat-0:     #10151c;
+      --heat-1:     #3d7fd6;
+      --heat-2:     #cfe2ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0c0f14;
+    --panel:      #141920;
+    --panel-2:    #1b212a;
+    --plot-bg:    #10151c;
+    --ink:        #e8edf5;
+    --ink-2:      #a9b4c2;
+    --ink-3:      #7c8797;
+    --rule:       #2a323d;
+    --rule-soft:  #212831;
+    --trace:      #5f9dff;
+    --trace-soft: rgba(95,157,255,0.16);
+    --graphite:   #96a2b2;
+    --pass:       #3fbf72;
+    --fail:       #f0645e;
+    --hold:       #e2a03f;
+    --focus:      #5f9dff;
+    --shadow:     0 1px 2px rgba(0,0,0,0.4), 0 2px 12px rgba(0,0,0,0.28);
+    --grid-c:     #232b35;
+    --heat-0:     #10151c;
+    --heat-1:     #3d7fd6;
+    --heat-2:     #cfe2ff;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .masthead {
+    border-bottom: 1px solid var(--rule);
+    background: var(--panel);
+    padding: 18px 24px 16px;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px;
+  }
+  .masthead h1 {
+    font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em;
+  }
+  .masthead .lede {
+    color: var(--ink-2); font-size: 13.5px; margin: 0; max-width: 68ch;
+  }
+  .stamp {
+    margin-left: auto; font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-3); border: 1px solid var(--rule); border-radius: 3px;
+    padding: 3px 8px; white-space: nowrap;
+  }
+
+  .shell {
+    display: grid; grid-template-columns: 296px minmax(0, 1fr);
+    gap: 20px; padding: 20px 24px 56px; align-items: start;
+    max-width: 1500px; margin: 0 auto;
+  }
+  @media (max-width: 980px) { .shell { grid-template-columns: minmax(0,1fr); } }
+
+  .rail { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 14px; }
+  @media (max-width: 980px) { .rail { position: static; } }
+
+  .group {
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 6px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .group > h2 {
+    margin: 0; padding: 8px 12px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3);
+    background: var(--panel-2); border-bottom: 1px solid var(--rule-soft);
+  }
+  .group-body { padding: 12px; display: grid; gap: 11px; }
+
+  .field { display: grid; gap: 4px; }
+  .field > label, .legend {
+    font-size: 11px; font-weight: 500; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  select, input[type="number"] {
+    width: 100%; font: inherit; font-size: 13.5px;
+    background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px;
+  }
+  select:focus-visible, input:focus-visible, button:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 1px;
+  }
+  input[type="range"] { width: 100%; accent-color: var(--trace); }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .segbar { display: flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+  .segbar button {
+    flex: 1; font: inherit; font-size: 12.5px; padding: 5px 4px; cursor: pointer;
+    background: var(--panel-2); color: var(--ink-2); border: 0;
+    border-right: 1px solid var(--rule);
+  }
+  .segbar button:last-child { border-right: 0; }
+  .segbar button[aria-pressed="true"] { background: var(--trace); color: #fff; font-weight: 500; }
+
+  .readout {
+    display: grid; gap: 10px; margin-bottom: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));
+  }
+  .cell {
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+    padding: 9px 12px 10px; box-shadow: var(--shadow);
+  }
+  .cell .v {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em; color: var(--ink);
+  }
+  .cell .k {
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-3); margin-top: 2px;
+  }
+  .cell.verdict { border-color: currentColor; }
+  .cell.verdict.ok { color: var(--pass); }
+  .cell.verdict.bad { color: var(--fail); }
+  .cell.verdict .v { color: currentColor; }
+  .cell.verdict .k { color: var(--ink-3); }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
+    box-shadow: var(--shadow); margin-bottom: 16px; overflow: hidden;
+  }
+  .panel > header {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    padding: 10px 14px; border-bottom: 1px solid var(--rule-soft);
+  }
+  .panel > header h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  .panel > header .note {
+    font-size: 12px; color: var(--ink-3); margin: 0;
+  }
+  .panel > header .note.mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px;
+  }
+  .plot-wrap { position: relative; padding: 8px 10px 6px; }
+  canvas { display: block; width: 100%; }
+  .tip {
+    position: absolute; pointer-events: none; opacity: 0;
+    transition: opacity .1s; background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 4px; padding: 5px 8px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px;
+    font-variant-numeric: tabular-nums; white-space: pre; box-shadow: var(--shadow);
+    z-index: 5;
+  }
+  .swatches {
+    display: flex; gap: 14px; flex-wrap: wrap; padding: 0 14px 10px;
+    font-size: 11.5px; color: var(--ink-2);
+  }
+  .swatches span { display: inline-flex; align-items: center; gap: 5px; }
+  .swatches i { width: 14px; height: 2px; border-radius: 1px; background: var(--trace); }
+  .swatches i.dot { width: 8px; height: 8px; border-radius: 50%; }
+  .swatches b.x { font-weight: 600; color: var(--graphite); font-size: 13px; line-height: 1; }
+  .warn {
+    display: inline-block; padding: 1px 7px; border-radius: 3px;
+    border: 1px solid currentColor; color: var(--hold);
+    font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  }
+
+  .metrics {
+    display: grid; background: var(--panel);
+    grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  }
+  .metric {
+    padding: 10px 14px;
+    border-right: 1px solid var(--rule-soft);
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .metrics.stale .metric .v { color: var(--ink-3); }
+  .metric .v {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 15px;
+    font-weight: 500; font-variant-numeric: tabular-nums;
+  }
+  .metric .k {
+    font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--ink-3); margin-top: 1px;
+  }
+
+  .table-scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td {
+    text-align: right; padding: 7px 14px; white-space: nowrap;
+    border-bottom: 1px solid var(--rule-soft);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  th {
+    font-family: "IBM Plex Sans", sans-serif; font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3);
+    border-bottom: 1px solid var(--rule);
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  .chip {
+    display: inline-block; padding: 1px 7px; border-radius: 3px;
+    font-family: "IBM Plex Sans", sans-serif; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .chip.ok { color: var(--pass); border: 1px solid currentColor; }
+  .chip.bad { color: var(--fail); border: 1px solid currentColor; }
+  .chip.na { color: var(--ink-3); border: 1px solid var(--rule); }
+  .empty { padding: 14px; color: var(--ink-3); font-size: 13px; }
+
+  footer.colophon {
+    max-width: 1500px; margin: 0 auto; padding: 0 24px 40px;
+    color: var(--ink-3); font-size: 12px; line-height: 1.6;
+  }
+  footer.colophon code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px;
+    color: var(--ink-2);
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="masthead">
+  <div>
+    <h1>Spectrum Bench</h1>
+    <p class="lede">An FFT analyser that grades itself. Every built-in signal carries the
+      spectrum it <em>should</em> produce; the bench overlays that ground truth on the
+      measurement and scores it live.</p>
+  </div>
+  <div class="stamp" id="stamp">idle</div>
+</header>
+
+<div class="shell">
+  <aside class="rail">
+    <section class="group">
+      <h2>Source</h2>
+      <div class="group-body">
+        <div class="field">
+          <label for="signal">Test signal</label>
+          <select id="signal"></select>
+        </div>
+        <div class="field">
+          <label for="noise">Added noise · rms <span id="noise-val">0.00</span></label>
+          <input type="range" id="noise" min="0" max="0.5" step="0.01" value="0">
+        </div>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Analysis</h2>
+      <div class="group-body">
+        <div class="field">
+          <label for="quantity">Quantity</label>
+          <select id="quantity">
+            <option value="amplitude_peak">amplitude (peak)</option>
+            <option value="amplitude_rms">amplitude (RMS)</option>
+            <option value="power">power spectrum</option>
+            <option value="psd">power spectral density</option>
+            <option value="asd">amplitude spectral density</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="window">Window</label>
+          <select id="window"></select>
+        </div>
+        <div class="row-2">
+          <div class="field">
+            <label for="nperseg">Segment</label>
+            <select id="nperseg">
+              <option value="0">whole record</option>
+              <option value="8192">8192</option>
+              <option value="4096">4096</option>
+              <option value="2048">2048</option>
+              <option value="1024">1024</option>
+              <option value="512">512</option>
+              <option value="256">256</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="overlap">Overlap</label>
+            <select id="overlap">
+              <option value="-1">auto</option>
+              <option value="0">0 %</option>
+              <option value="25">25 %</option>
+              <option value="50">50 %</option>
+              <option value="66">66 %</option>
+              <option value="75">75 %</option>
+              <option value="90">90 %</option>
+            </select>
+          </div>
+        </div>
+        <div class="row-2">
+          <div class="field">
+            <label for="averaging">Averaging</label>
+            <select id="averaging">
+              <option value="linear">linear (RMS)</option>
+              <option value="peak_hold">peak hold</option>
+              <option value="none">none</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="detrend">Detrend</label>
+            <select id="detrend">
+              <option value="none">none</option>
+              <option value="mean">mean</option>
+              <option value="linear">linear</option>
+            </select>
+          </div>
+        </div>
+        <div class="row-2">
+          <div class="field">
+            <label for="pad">Zero-pad</label>
+            <select id="pad">
+              <option value="1">1×</option><option value="2">2×</option>
+              <option value="4">4×</option><option value="8">8×</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="npeaks">Max peaks</label>
+            <input type="number" id="npeaks" min="1" max="40" step="1" value="10">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Display</h2>
+      <div class="group-body">
+        <div class="field">
+          <span class="legend">Amplitude</span>
+          <div class="segbar" id="yscale" role="group" aria-label="Amplitude scale">
+            <button data-v="linear" aria-pressed="true">linear</button>
+            <button data-v="db" aria-pressed="false">dB</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="legend">Frequency axis</span>
+          <div class="segbar" id="xscale" role="group" aria-label="Frequency axis">
+            <button data-v="linear" aria-pressed="true">linear</button>
+            <button data-v="log" aria-pressed="false">log</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="legend">Harmonic cursors</span>
+          <div class="segbar" id="harm" role="group" aria-label="Harmonic cursors">
+            <button data-v="off" aria-pressed="true">off</button>
+            <button data-v="on" aria-pressed="false">on</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </aside>
+
+  <main>
+    <div class="readout" id="readout"></div>
+
+    <section class="panel">
+      <header>
+        <h2>Time domain</h2>
+        <p class="note" id="sig-desc"></p>
+      </header>
+      <div class="plot-wrap">
+        <canvas id="c-time" height="200"></canvas>
+        <div class="tip" id="tip-time"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header>
+        <h2>Spectrum</h2>
+        <p class="note mono" id="win-info"></p>
+      </header>
+      <div class="plot-wrap">
+        <canvas id="c-spec" height="330"></canvas>
+        <div class="tip" id="tip-spec"></div>
+      </div>
+      <div class="swatches">
+        <span><i></i> measured</span>
+        <span><i class="dot"></i> detected peak</span>
+        <span><b class="x">✕</b> expected (ground truth)</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header>
+        <h2>Tone metrics</h2>
+        <p class="note">Main-lobe power integration, blackman-harris window.</p>
+        <span id="tone-note"></span>
+      </header>
+      <div class="metrics" id="metrics"></div>
+    </section>
+
+    <section class="panel">
+      <header>
+        <h2>Spectrogram</h2>
+        <p class="note">Short-time PSD, dB re 1 unit²/Hz — same scaling as the spectrum above.</p>
+      </header>
+      <div class="plot-wrap">
+        <canvas id="c-sgram" height="230"></canvas>
+        <div class="tip" id="tip-sgram"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header>
+        <h2>Verification</h2>
+        <p class="note">Each expected line against the nearest detected peak, in peak-amplitude
+          units. Pass = within 1 Hz and 5 % amplitude.</p>
+      </header>
+      <div class="table-scroll" id="verify"></div>
+    </section>
+  </main>
+</div>
+
+<footer class="colophon">
+  Scaling per Heinzel/Rüdiger/Schilling 2002 (<code>S1</code>/<code>S2</code> window sums,
+  <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
+  per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
+  Python <code>fft_analyser</code> module — same conventions, same test signals, same
+  ground-truth scoring.
+</footer>
+
+<script>
+(() => {
+"use strict";
+
+/* ───────────────────────── DSP core ───────────────────────── */
+
+const twiddleCache = new Map();
+function twiddles(n) {
+  let t = twiddleCache.get(n);
+  if (!t) {
+    const c = new Float64Array(n >> 1), s = new Float64Array(n >> 1);
+    for (let i = 0; i < (n >> 1); i++) { const a = -2 * Math.PI * i / n; c[i] = Math.cos(a); s[i] = Math.sin(a); }
+    t = { c, s }; twiddleCache.set(n, t);
+  }
+  return t;
+}
+
+// in-place iterative radix-2 Cooley-Tukey
+function fftInPlace(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      let tr = re[i]; re[i] = re[j]; re[j] = tr;
+      let ti = im[i]; im[i] = im[j]; im[j] = ti;
+    }
+  }
+  const { c, s } = twiddles(n);
+  for (let len = 2; len <= n; len <<= 1) {
+    const half = len >> 1, step = n / len;
+    for (let i = 0; i < n; i += len) {
+      for (let j = 0; j < half; j++) {
+        const wr = c[j * step], wi = s[j * step];
+        const a = i + j, b = a + half;
+        const vr = re[b] * wr - im[b] * wi;
+        const vi = re[b] * wi + im[b] * wr;
+        re[b] = re[a] - vr; im[b] = im[a] - vi;
+        re[a] += vr;        im[a] += vi;
+      }
+    }
+  }
+}
+
+function nextPow2(n) { let p = 1; while (p < n) p <<= 1; return p; }
+
+// |rfft|² of a real segment, zero-padded to nfft. Returns Float64Array(nfft/2+1).
+function rfftMagSq(seg, nfft) {
+  const re = new Float64Array(nfft), im = new Float64Array(nfft);
+  re.set(seg.subarray(0, Math.min(seg.length, nfft)));
+  fftInPlace(re, im);
+  const out = new Float64Array((nfft >> 1) + 1);
+  for (let k = 0; k < out.length; k++) out[k] = re[k] * re[k] + im[k] * im[k];
+  return out;
+}
+
+/* ── windows (periodic, matching scipy.signal.get_window(..., fftbins=True)) ── */
+
+const COS_COEFFS = {
+  "rectangular":     [1],
+  "hann":            [0.5, 0.5],
+  "hamming":         [0.54, 0.46],
+  "blackman":        [0.42, 0.5, 0.08],
+  "blackman-harris": [0.35875, 0.48829, 0.14128, 0.01168],
+  "flattop":         [0.21557895, 0.41663158, 0.277263158, 0.083578947, 0.006947368],
+};
+
+function besselI0(x) {
+  let sum = 1, term = 1; const y = x * x / 4;
+  for (let k = 1; k < 80; k++) { term *= y / (k * k); sum += term; if (term < 1e-18 * sum) break; }
+  return sum;
+}
+
+const winCache = new Map();
+function makeWindow(name, N) {
+  const key = name + ":" + N;
+  let w = winCache.get(key);
+  if (w) return w;
+  w = new Float64Array(N);
+  if (name === "kaiser") {
+    const beta = 14, den = besselI0(beta);
+    for (let n = 0; n < N; n++) {
+      const r = 2 * n / N - 1;
+      w[n] = besselI0(beta * Math.sqrt(Math.max(0, 1 - r * r))) / den;
+    }
+  } else {
+    const a = COS_COEFFS[name];
+    for (let n = 0; n < N; n++) {
+      let v = 0;
+      for (let k = 0; k < a.length; k++) v += (k % 2 ? -1 : 1) * a[k] * Math.cos(2 * Math.PI * k * n / N);
+      w[n] = v;
+    }
+  }
+  winCache.set(key, w);
+  return w;
+}
+
+// literature figures (Harris 1978 / Heinzel 2002); NENBW & scalloping are computed
+const WINDOWS = {
+  "rectangular":     { sidelobe: -13.3,  overlap: 0.00, lobe: 1, use: "bin-exact tones, full transients" },
+  "hann":            { sidelobe: -31.5,  overlap: 0.50, lobe: 2, use: "general purpose (default)" },
+  "hamming":         { sidelobe: -42.7,  overlap: 0.50, lobe: 2, use: "close tones of similar level" },
+  "blackman":        { sidelobe: -58.1,  overlap: 0.62, lobe: 3, use: "moderate dynamic range" },
+  "blackman-harris": { sidelobe: -92.0,  overlap: 0.661, lobe: 4, use: "high dynamic range" },
+  "flattop":         { sidelobe: -93.0,  overlap: 0.76, lobe: 5, use: "amplitude calibration" },
+  "kaiser":          { sidelobe: -105.9, overlap: 0.70, lobe: 4, use: "very high dynamic range" },
+};
+const WINDOW_LABEL = { "kaiser": "kaiser (β=14)" };
+
+function windowFigures(name, N) {
+  const w = makeWindow(name, N);
+  let s1 = 0, s2 = 0;
+  for (let i = 0; i < N; i++) { s1 += w[i]; s2 += w[i] * w[i]; }
+  // response half-way between bins → scalloping loss
+  let hr = 0, hi = 0;
+  for (let n = 0; n < N; n++) { const a = -Math.PI * n / N; hr += w[n] * Math.cos(a); hi += w[n] * Math.sin(a); }
+  const scallop = 20 * Math.log10(Math.hypot(hr, hi) / s1);
+  return { s1, s2, nenbw: N * s2 / (s1 * s1), coherentGain: s1 / N, scallop };
+}
+
+/* ── detrend ── */
+function detrendSeg(x, mode) {
+  if (mode === "none") return x;
+  const n = x.length, out = new Float64Array(n);
+  if (mode === "mean") {
+    let m = 0; for (let i = 0; i < n; i++) m += x[i]; m /= n;
+    for (let i = 0; i < n; i++) out[i] = x[i] - m;
+    return out;
+  }
+  // least-squares line removal
+  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (let i = 0; i < n; i++) { sx += i; sy += x[i]; sxx += i * i; sxy += i * x[i]; }
+  const d = n * sxx - sx * sx;
+  const slope = d === 0 ? 0 : (n * sxy - sx * sy) / d;
+  const icpt = (sy - slope * sx) / n;
+  for (let i = 0; i < n; i++) out[i] = x[i] - (slope * i + icpt);
+  return out;
+}
+
+/* ── the analysis (mirrors fft_analyser.analysis.analyze) ── */
+
+const QUANTITIES = {
+  amplitude_peak: { label: "amplitude (peak)", unit: "units",     power: false },
+  amplitude_rms:  { label: "amplitude (RMS)",  unit: "units RMS", power: false },
+  power:          { label: "power spectrum",   unit: "units² RMS", power: true  },
+  psd:            { label: "power spectral density", unit: "units²/Hz", power: true },
+  asd:            { label: "amplitude spectral density", unit: "units/√Hz", power: false },
+};
+
+function analyze(x, fs, opt) {
+  const { quantity = "amplitude_peak", window = "hann", detrend = "none",
+          averaging = "linear", padFactor = 1 } = opt;
+  const n = x.length;
+  let nperseg = opt.nperseg ? Math.min(opt.nperseg, n) : n;
+  nperseg = Math.max(2, nextPow2(nperseg) > nperseg ? (nextPow2(nperseg) >> 1) : nperseg);
+  const overlap = opt.overlap == null || opt.overlap < 0 ? WINDOWS[window].overlap : opt.overlap;
+
+  const w = makeWindow(window, nperseg);
+  const fig = windowFigures(window, nperseg);
+  const enbwHz = fs * fig.s2 / (fig.s1 * fig.s1);
+
+  const step = Math.max(1, Math.round(nperseg * (1 - overlap)));
+  const starts = [];
+  for (let s = 0; s + nperseg <= n; s += step) starts.push(s);
+  if (starts.length === 0) starts.push(0);
+  const used = averaging === "none" ? starts.slice(0, 1) : starts;
+
+  const nfft = nperseg * padFactor;
+  const nbins = (nfft >> 1) + 1;
+  const acc = new Float64Array(nbins);
+  const seg = new Float64Array(nperseg);
+
+  for (let si = 0; si < used.length; si++) {
+    const s0 = used[si];
+    for (let i = 0; i < nperseg; i++) seg[i] = x[s0 + i];
+    const d = detrendSeg(seg, detrend);
+    const wd = new Float64Array(nperseg);
+    for (let i = 0; i < nperseg; i++) wd[i] = d[i] * w[i];
+    const m2 = rfftMagSq(wd, nfft);
+    if (si === 0) acc.set(m2);
+    else if (averaging === "peak_hold") { for (let k = 0; k < nbins; k++) acc[k] = Math.max(acc[k], m2[k]); }
+    else { for (let k = 0; k < nbins; k++) acc[k] += m2[k]; }
+  }
+  if (averaging === "linear" && used.length > 1) for (let k = 0; k < nbins; k++) acc[k] /= used.length;
+
+  // single-sided power spectrum: c_k = 2 except DC and (even nfft) Nyquist
+  const hasNyq = nfft % 2 === 0;
+  const ps = new Float64Array(nbins);
+  const s1sq = fig.s1 * fig.s1;
+  for (let k = 0; k < nbins; k++) {
+    const c = (k === 0 || (hasNyq && k === nbins - 1)) ? 1 : 2;
+    ps[k] = c * acc[k] / s1sq;
+  }
+
+  const binWidth = fs / nfft;
+  const freqs = new Float64Array(nbins);
+  for (let k = 0; k < nbins; k++) freqs[k] = k * binWidth;
+
+  return {
+    freqs, ps, fs, binWidth, enbwHz, nenbw: fig.nenbw, nperseg,
+    nSegments: used.length, overlap, window, quantity, detrend, padFactor, hasNyq,
+    scallop: fig.scallop,
+    spectrum: psToQuantity(ps, quantity, enbwHz, hasNyq),
+  };
+}
+
+function psToQuantity(ps, quantity, enbwHz, hasNyq) {
+  const n = ps.length, out = new Float64Array(n);
+  if (quantity === "power") { out.set(ps); return out; }
+  if (quantity === "amplitude_rms") { for (let k = 0; k < n; k++) out[k] = Math.sqrt(ps[k]); return out; }
+  if (quantity === "psd") { for (let k = 0; k < n; k++) out[k] = ps[k] / enbwHz; return out; }
+  if (quantity === "asd") { for (let k = 0; k < n; k++) out[k] = Math.sqrt(ps[k] / enbwHz); return out; }
+  for (let k = 0; k < n; k++) out[k] = Math.sqrt(2 * ps[k]);
+  out[0] = Math.sqrt(ps[0]);
+  if (hasNyq) out[n - 1] = Math.sqrt(ps[n - 1]);
+  return out;
+}
+
+function bandRms(res, fLow, fHigh) {
+  const psd = psToQuantity(res.ps, "psd", res.enbwHz, res.hasNyq);
+  let sum = 0;
+  for (let k = 0; k < psd.length; k++) {
+    const f = res.freqs[k];
+    if (f >= fLow && f <= (fHigh == null ? Infinity : fHigh)) sum += psd[k];
+  }
+  return Math.sqrt(sum * res.binWidth);
+}
+
+function parsevalError(x, fs) {
+  const r = analyze(x, fs, { quantity: "psd", window: "rectangular", detrend: "none", averaging: "none" });
+  let sum = 0; for (let k = 0; k < r.spectrum.length; k++) sum += r.spectrum[k];
+  const rmsF = Math.sqrt(sum * r.binWidth);
+  let ms = 0; for (let i = 0; i < x.length; i++) ms += x[i] * x[i];
+  const rmsT = Math.sqrt(ms / x.length);
+  if (rmsT === 0) return rmsF === 0 ? 0 : Infinity;
+  return Math.abs(rmsF - rmsT) / rmsT;
+}
+
+/* ── peak detection with sub-bin parabolic refinement ── */
+function findPeaks(freqs, mag, nPeaks, minRelDb) {
+  let peak = 0;
+  for (let i = 0; i < mag.length; i++) if (mag[i] > peak) peak = mag[i];
+  if (peak <= 0) return [];
+  const prom = peak * Math.pow(10, (minRelDb == null ? -60 : minRelDb) / 20);
+  const idx = [];
+  if (mag.length > 1 && mag[0] > mag[1] && mag[0] - mag[1] >= prom) idx.push(0);
+  for (let i = 1; i < mag.length - 1; i++) {
+    if (mag[i] > mag[i - 1] && mag[i] >= mag[i + 1]) {
+      // prominence: drop to the lower of the two adjacent valleys
+      let l = i; while (l > 0 && mag[l - 1] <= mag[l]) l--;
+      let r = i; while (r < mag.length - 1 && mag[r + 1] <= mag[r]) r++;
+      const base = Math.max(mag[l], mag[r]);
+      if (mag[i] - base >= prom) idx.push(i);
+    }
+  }
+  const df = freqs.length > 1 ? freqs[1] - freqs[0] : 1;
+  const floor = peak * 1e-12;
+  const out = [];
+  for (const i of idx) {
+    let f = freqs[i], a = mag[i];
+    if (i > 0 && i < mag.length - 1 && mag[i - 1] > floor && mag[i + 1] > floor) {
+      const y0 = 20 * Math.log10(mag[i - 1]), y1 = 20 * Math.log10(mag[i]), y2 = 20 * Math.log10(mag[i + 1]);
+      const den = y0 - 2 * y1 + y2;
+      if (den < 0) {
+        const d = 0.5 * (y0 - y2) / den;
+        f = freqs[i] + d * df;
+        a = Math.pow(10, (y1 - 0.25 * (y0 - y2) * d) / 20);
+      }
+    }
+    out.push({ f, a });
+  }
+  out.sort((p, q) => q.a - p.a);
+  return out.slice(0, nPeaks);
+}
+
+/* ── tone metrics (IEEE 1241 conventions) ── */
+function toneMetrics(x, fs) {
+  const res = analyze(x, fs, { quantity: "psd", window: "blackman-harris", detrend: "mean", averaging: "none" });
+  const psd = res.spectrum, freqs = res.freqs, df = res.binWidth;
+  const lobe = WINDOWS["blackman-harris"].lobe;
+
+  let k1 = lobe + 1, best = -1;
+  for (let k = lobe + 1; k < psd.length; k++) if (psd[k] > best) { best = psd[k]; k1 = k; }
+
+  let f1 = freqs[k1];
+  if (k1 > 0 && k1 < psd.length - 1 && psd[k1 - 1] > 0 && psd[k1 + 1] > 0) {
+    const y0 = 10 * Math.log10(psd[k1 - 1]), y1 = 10 * Math.log10(psd[k1]), y2 = 10 * Math.log10(psd[k1 + 1]);
+    const den = y0 - 2 * y1 + y2;
+    if (den < 0) f1 = freqs[k1] + 0.5 * (y0 - y2) / den * df;
+  }
+
+  const comp = (k) => {
+    let s = 0;
+    for (let i = Math.max(0, k - lobe); i <= Math.min(psd.length - 1, k + lobe); i++) s += psd[i];
+    return s * df;
+  };
+  let total = 0; for (let k = lobe + 1; k < psd.length; k++) total += psd[k]; total *= df;
+  const pFund = comp(k1);
+
+  let pHarm = 0, nHarm = 0;
+  for (let h = 2; h <= 10; h++) {
+    const kh = Math.round(h * f1 / df);
+    if (kh + lobe >= psd.length) break;
+    if (Math.abs(kh - k1) <= 2 * lobe) continue;
+    pHarm += comp(kh); nHarm++;
+  }
+  const noiseDist = Math.max(total - pFund, 0);
+  const noiseOnly = Math.max(noiseDist - pHarm, 0);
+  const rdb = (num, den) => den <= 0 ? Infinity : (num <= 0 ? -Infinity : 10 * Math.log10(num / den));
+
+  let kSpur = -1, bestSpur = -1;
+  for (let k = lobe + 1; k < psd.length; k++) {
+    if (Math.abs(k - k1) <= lobe) continue;
+    if (psd[k] > bestSpur) { bestSpur = psd[k]; kSpur = k; }
+  }
+  const pSpur = kSpur >= 0 ? comp(kSpur) : 0;
+
+  let ms = 0, pk = 0;
+  for (let i = 0; i < x.length; i++) { ms += x[i] * x[i]; if (Math.abs(x[i]) > pk) pk = Math.abs(x[i]); }
+  const rms = Math.sqrt(ms / x.length);
+  const thd = pFund > 0 ? Math.sqrt(pHarm / pFund) : NaN;
+  const thdN = pFund > 0 ? Math.sqrt(noiseDist / pFund) : NaN;
+  const sinad = rdb(pFund, noiseDist);
+
+  return {
+    f0: f1, fundPeak: Math.sqrt(2 * pFund), thdPct: thd * 100, thdNPct: thdN * 100,
+    snr: rdb(pFund, noiseOnly), sinad, enob: (sinad - 1.76) / 6.02,
+    sfdr: rdb(pFund, pSpur), rms, crest: rms > 0 ? pk / rms : NaN, nHarm,
+  };
+}
+
+/* ── spectrogram: short-time PSD ── */
+function spectrogram(x, fs, nperseg, overlap) {
+  nperseg = Math.min(nperseg, nextPow2(x.length) === x.length ? x.length : x.length);
+  const w = makeWindow("hann", nperseg);
+  let s1 = 0, s2 = 0;
+  for (let i = 0; i < nperseg; i++) { s1 += w[i]; s2 += w[i] * w[i]; }
+  const enbw = fs * s2 / (s1 * s1);
+  const step = Math.max(1, Math.round(nperseg * (1 - overlap)));
+  const nbins = (nperseg >> 1) + 1;
+  const rows = [], times = [];
+  const seg = new Float64Array(nperseg);
+  for (let s0 = 0; s0 + nperseg <= x.length; s0 += step) {
+    for (let i = 0; i < nperseg; i++) seg[i] = x[s0 + i] * w[i];
+    const m2 = rfftMagSq(seg, nperseg);
+    const row = new Float64Array(nbins);
+    for (let k = 0; k < nbins; k++) {
+      const c = (k === 0 || k === nbins - 1) ? 1 : 2;
+      row[k] = (c * m2[k] / (s1 * s1)) / enbw;
+    }
+    rows.push(row);
+    times.push((s0 + nperseg / 2) / fs);
+  }
+  const freqs = new Float64Array(nbins);
+  for (let k = 0; k < nbins; k++) freqs[k] = k * fs / nperseg;
+  return { rows, times, freqs };
+}
+
+/* ───────────────────────── test signals ───────────────────────── */
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function gaussian(n, sigma, seed) {
+  const r = mulberry32(seed), out = new Float64Array(n);
+  for (let i = 0; i < n; i += 2) {
+    const u = Math.max(r(), 1e-12), v = r();
+    const m = Math.sqrt(-2 * Math.log(u));
+    out[i] = sigma * m * Math.cos(2 * Math.PI * v);
+    if (i + 1 < n) out[i + 1] = sigma * m * Math.sin(2 * Math.PI * v);
+  }
+  return out;
+}
+
+function tones(freqs, amps, fs, dur) {
+  const n = Math.round(fs * dur), y = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / fs; let v = 0;
+    for (let j = 0; j < freqs.length; j++) v += amps[j] * Math.sin(2 * Math.PI * freqs[j] * t);
+    y[i] = v;
+  }
+  return y;
+}
+
+const SIGNALS = {
+  "Multi-tone (50/120/240 Hz)": () => ({
+    fs: 2048, y: tones([50, 120, 240], [1, 0.5, 0.25], 2048, 2),
+    desc: "Sinusoids: 1 @ 50 Hz, 0.5 @ 120 Hz, 0.25 @ 240 Hz",
+    peaks: [[50, 1], [120, 0.5], [240, 0.25]],
+  }),
+  "Single tone (100 Hz)": () => ({
+    fs: 2048, y: tones([100], [1], 2048, 2),
+    desc: "One sinusoid: 1 @ 100 Hz", peaks: [[100, 1]],
+  }),
+  "Two-tone (100/110 Hz)": () => ({
+    fs: 2048, y: tones([100, 110], [1, 1], 2048, 2),
+    desc: "Tones at 100 & 110 Hz — resolving them needs bin width × NENBW below 10 Hz",
+    peaks: [[100, 1], [110, 1]],
+  }),
+  "Distorted tone (THD 2.24 %)": () => ({
+    fs: 8192, y: tones([100, 200, 300], [1, 0.02, 0.01], 8192, 2),
+    desc: "1 @ 100 Hz with H2 = 2 %, H3 = 1 % → THD = √5 % = 2.236 %",
+    peaks: [[100, 1], [200, 0.02], [300, 0.01]],
+  }),
+  "Quantized tone (8-bit)": () => {
+    const fs = 8192, y = tones([100.372], [1], fs, 2), q = 1 / 128;
+    for (let i = 0; i < y.length; i++) y[i] = Math.round(y[i] / q) * q;
+    return { fs, y, desc: "1 @ 100.372 Hz through an ideal 8-bit quantizer → expect ENOB ≈ 8, SINAD ≈ 50 dB", peaks: [] };
+  },
+  "DC + tone": () => {
+    const fs = 2048, y = tones([100], [1], fs, 2);
+    for (let i = 0; i < y.length; i++) y[i] += 2;
+    return { fs, y, desc: "1 @ 100 Hz on a DC offset of 2 — the 0 Hz bin must read 2, not 4", peaks: [[0, 2], [100, 1]] };
+  },
+  "Square wave (50 Hz)": () => {
+    const fs = 8192, n = fs * 2, y = new Float64Array(n);
+    for (let i = 0; i < n; i++) y[i] = Math.sign(Math.sin(2 * Math.PI * 50 * i / fs));
+    const peaks = [];
+    for (let k = 1; k < 10; k += 2) if (50 * k < fs / 2) peaks.push([50 * k, 4 / (Math.PI * k)]);
+    return { fs, y, desc: "Unit square @ 50 Hz — odd harmonics at 4A/πk, THD ≈ 48.3 %", peaks };
+  },
+  "Impulse": () => {
+    const fs = 2048, n = fs, y = new Float64Array(n);
+    y[n >> 1] = 1;
+    return { fs, y, desc: `Unit impulse — flat spectrum at 2A/N = ${(2 / n).toPrecision(3)}`, peaks: [], band: [0, fs / 2] };
+  },
+  "Linear chirp (20–400 Hz)": () => {
+    const fs = 2048, dur = 2, n = fs * dur, y = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const t = i / fs;
+      y[i] = Math.sin(2 * Math.PI * (20 * t + (400 - 20) / (2 * dur) * t * t));
+    }
+    return { fs, y, desc: "Sweep 20 → 400 Hz over 2 s", peaks: [], band: [20, 400] };
+  },
+  "White noise": () => {
+    const fs = 2048;
+    return {
+      fs, y: gaussian(fs * 8, 1, 12345),
+      desc: `Gaussian noise, rms 1 — single-sided PSD floor = 2σ²/fs = ${(2 / fs).toPrecision(3)} units²/Hz`,
+      peaks: [], band: [0, fs / 2], psdLevel: 2 / fs,
+    };
+  },
+};
+
+/* ───────────────────────── plotting ───────────────────────── */
+
+function tok(name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+
+function fitCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = parseInt(cv.getAttribute("height"), 10);
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  cv.style.height = h + "px";
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+
+function niceTicks(lo, hi, target) {
+  if (!(hi > lo)) return [lo];
+  const raw = (hi - lo) / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(v);
+  return out;
+}
+function logTicks(lo, hi) {
+  const out = [];
+  for (let d = Math.floor(Math.log10(lo)); d <= Math.ceil(Math.log10(hi)); d++) {
+    for (const m of [1, 2, 5]) {
+      const v = m * Math.pow(10, d);
+      if (v >= lo && v <= hi) out.push(v);
+    }
+  }
+  return out;
+}
+function fmtNum(v) {
+  const a = Math.abs(v);
+  if (a === 0) return "0";
+  if (a >= 1e4 || a < 1e-3) return v.toExponential(1).replace("e+", "e");
+  return String(+v.toPrecision(4));
+}
+
+const PAD = { l: 62, r: 12, t: 10, b: 30 };
+
+function drawFrame(ctx, w, h, xs, ys, xLabel, yLabel, logX) {
+  const grid = tok("--grid-c"), rule = tok("--rule"), ink3 = tok("--ink-3"), bg = tok("--plot-bg");
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = bg;
+  ctx.fillRect(PAD.l, PAD.t, w - PAD.l - PAD.r, h - PAD.t - PAD.b);
+
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.strokeStyle = grid; ctx.lineWidth = 1;
+  ctx.fillStyle = ink3;
+
+  const xt = logX ? logTicks(xs.lo, xs.hi) : niceTicks(xs.lo, xs.hi, 7);
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const v of xt) {
+    const px = Math.round(xs.px(v)) + 0.5;
+    if (px < PAD.l - 1 || px > w - PAD.r + 1) continue;
+    ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, h - PAD.b); ctx.stroke();
+    ctx.fillText(fmtNum(v), px, h - PAD.b + 6);
+  }
+  const yt = niceTicks(ys.lo, ys.hi, 5);
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const v of yt) {
+    const py = Math.round(ys.px(v)) + 0.5;
+    if (py < PAD.t - 1 || py > h - PAD.b + 1) continue;
+    ctx.beginPath(); ctx.moveTo(PAD.l, py); ctx.lineTo(w - PAD.r, py); ctx.stroke();
+    ctx.fillText(fmtNum(v), PAD.l - 7, py);
+  }
+
+  ctx.strokeStyle = rule;
+  ctx.strokeRect(PAD.l + 0.5, PAD.t + 0.5, w - PAD.l - PAD.r - 1, h - PAD.t - PAD.b - 1);
+
+  ctx.font = '11px "IBM Plex Sans", sans-serif';
+  ctx.fillStyle = ink3;
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  ctx.fillText(xLabel, PAD.l + (w - PAD.l - PAD.r) / 2, h - 2);
+  ctx.save();
+  ctx.translate(11, PAD.t + (h - PAD.t - PAD.b) / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textBaseline = "top";
+  ctx.fillText(yLabel, 0, 0);
+  ctx.restore();
+}
+
+function makeScale(lo, hi, p0, p1, log) {
+  if (log) {
+    const l0 = Math.log10(lo), l1 = Math.log10(hi);
+    return { lo, hi, log: true, px: v => p0 + (Math.log10(Math.max(v, lo)) - l0) / (l1 - l0) * (p1 - p0),
+             inv: p => Math.pow(10, l0 + (p - p0) / (p1 - p0) * (l1 - l0)) };
+  }
+  return { lo, hi, log: false, px: v => p0 + (v - lo) / (hi - lo) * (p1 - p0),
+           inv: p => lo + (p - p0) / (p1 - p0) * (hi - lo) };
+}
+
+function drawTrace(ctx, xs, ys, X, Y, color, w, clipTop, clipBot) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(PAD.l, PAD.t, clipTop, clipBot); ctx.clip();
+  ctx.strokeStyle = color; ctx.lineWidth = w || 1.6;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i < X.length; i++) {
+    if (xs.log && X[i] <= 0) continue;
+    const px = xs.px(X[i]), py = ys.px(Y[i]);
+    if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ───────────────────────── app wiring ───────────────────────── */
+
+const el = id => document.getElementById(id);
+const state = { yscale: "linear", xscale: "linear", harm: "off" };
+
+// populate selects
+const sigSel = el("signal");
+Object.keys(SIGNALS).forEach(k => sigSel.add(new Option(k, k)));
+const winSel = el("window");
+Object.keys(WINDOWS).forEach(k => winSel.add(new Option(WINDOW_LABEL[k] || k, k)));
+winSel.value = "hann";
+
+document.querySelectorAll(".segbar").forEach(bar => {
+  bar.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    [...bar.children].forEach(c => c.setAttribute("aria-pressed", String(c === b)));
+    state[bar.id] = b.dataset.v;
+    render();
+  });
+});
+["signal", "quantity", "window", "nperseg", "overlap", "averaging", "detrend", "pad", "npeaks"]
+  .forEach(id => el(id).addEventListener("change", render));
+el("noise").addEventListener("input", () => {
+  el("noise-val").textContent = (+el("noise").value).toFixed(2);
+  render();
+});
+
+function currentSignal() {
+  const s = SIGNALS[sigSel.value]();
+  const nr = +el("noise").value;
+  if (nr > 0) {
+    const g = gaussian(s.y.length, nr, 987654);
+    const y = new Float64Array(s.y.length);
+    for (let i = 0; i < y.length; i++) y[i] = s.y[i] + g[i];
+    s.y = y;
+    s.desc += ` + added noise (rms ${nr.toFixed(2)})`;
+    s.psdLevel = (s.psdLevel || 0) + 2 * nr * nr / s.fs;
+  }
+  return s;
+}
+
+function expectedInQuantity(f, aPk, quantity, enbw) {
+  if (quantity === "amplitude_peak") return aPk;
+  const rms = f === 0 ? aPk : aPk / Math.SQRT2;
+  if (quantity === "amplitude_rms") return rms;
+  const p = rms * rms;
+  if (quantity === "power") return p;
+  if (quantity === "psd") return p / enbw;
+  return Math.sqrt(p / enbw);
+}
+
+function toDisplay(v, quantity, db, floor) {
+  if (!db) return v;
+  return (QUANTITIES[quantity].power ? 10 : 20) * Math.log10(Math.max(v, floor));
+}
+
+let cache = null;
+
+function render() {
+  const sig = currentSignal();
+  const quantity = el("quantity").value;
+  const window_ = el("window").value;
+  const res = analyze(sig.y, sig.fs, {
+    quantity, window: window_, detrend: el("detrend").value,
+    nperseg: +el("nperseg").value || null,
+    overlap: +el("overlap").value < 0 ? null : +el("overlap").value / 100,
+    averaging: el("averaging").value, padFactor: +el("pad").value,
+  });
+  const ampView = psToQuantity(res.ps, "amplitude_peak", res.enbwHz, res.hasNyq);
+  const peaks = findPeaks(res.freqs, ampView, +el("npeaks").value || 10);
+  const par = parsevalError(sig.y, sig.fs);
+  const met = toneMetrics(sig.y, sig.fs);
+
+  cache = { sig, res, peaks, met, quantity };
+
+  el("sig-desc").textContent = sig.desc;
+  el("win-info").textContent =
+    `${WINDOW_LABEL[window_] || window_} · NENBW ${res.nenbw.toFixed(4)} bins · ` +
+    `ENBW ${fmtNum(res.enbwHz)} Hz · sidelobe ${WINDOWS[window_].sidelobe} dB · ` +
+    `scalloping ${res.scallop.toFixed(2)} dB · rec. overlap ${Math.round(WINDOWS[window_].overlap * 100)} % · ` +
+    WINDOWS[window_].use;
+
+  // verification
+  const detrended = el("detrend").value !== "none";
+  const expected = (sig.peaks || []).filter(([f]) => f > 0 || !detrended);
+  const rows = expected.map(([fe, ae]) => {
+    let best = null, bd = Infinity;
+    for (const p of peaks) { const d = Math.abs(p.f - fe); if (d < bd) { bd = d; best = p; } }
+    const fm = best ? best.f : NaN, am = best ? best.a : NaN;
+    const fErr = fm - fe, aErr = ae ? (am - ae) / ae * 100 : NaN;
+    return { fe, ae, fm, am, fErr, aErr, pass: isFinite(fm) && Math.abs(fErr) <= 1 && Math.abs(aErr) <= 5 };
+  });
+
+  renderReadout(res, sig, par, rows, expected.length);
+  renderVerify(rows, peaks, expected.length);
+  renderMetrics(met, res);
+  drawAll();
+
+  const nFail = rows.filter(r => !r.pass).length;
+  el("stamp").textContent = expected.length
+    ? (nFail ? `${nFail} of ${rows.length} lines out of tolerance` : `${rows.length} lines verified`)
+    : "no discrete ground truth";
+}
+
+function renderReadout(res, sig, par, rows, nExpected) {
+  const nFail = rows.filter(r => !r.pass).length;
+  const verdict = !nExpected ? { t: "n/a", c: "" }
+    : nFail ? { t: `${nFail}/${rows.length} fail`, c: "bad" }
+            : { t: `${rows.length}/${rows.length} pass`, c: "ok" };
+  const cells = [
+    [sig.y.length.toLocaleString(), "samples"],
+    [res.fs.toLocaleString() + " Hz", "sample rate"],
+    [fmtNum(res.binWidth) + " Hz", "bin width Δf"],
+    [fmtNum(res.enbwHz) + " Hz", "ENBW / bin"],
+    [String(res.nSegments), "averages"],
+    [par.toExponential(1), "Parseval error"],
+  ];
+  el("readout").innerHTML =
+    cells.map(([v, k]) => `<div class="cell"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("") +
+    `<div class="cell verdict ${verdict.c}"><div class="v">${verdict.t}</div><div class="k">ground truth</div></div>`;
+}
+
+function renderMetrics(m, res) {
+  const dB = v => !isFinite(v) ? "∞" : v.toFixed(1) + " dB";
+  // these figures assume one tone dominates; say so plainly when it doesn't
+  const dominant = isFinite(m.sfdr) ? m.sfdr >= 20 : true;
+  el("tone-note").innerHTML = dominant ? ""
+    : `<span class="warn">no dominant tone — figures below don't apply</span>`;
+  el("metrics").className = "metrics" + (dominant ? "" : " stale");
+  const items = [
+    [m.f0.toFixed(2) + " Hz", "fundamental"],
+    [fmtNum(m.fundPeak), "fund. amplitude (pk)"],
+    [m.thdPct < 1e-6 ? "≈ 0" : m.thdPct.toFixed(3) + " %", "THD"],
+    [m.thdNPct < 1e-6 ? "≈ 0" : m.thdNPct.toFixed(3) + " %", "THD + N"],
+    [dB(m.snr), "SNR"],
+    [dB(m.sinad), "SINAD"],
+    [isFinite(m.enob) ? m.enob.toFixed(2) + " bits" : "—", "ENOB"],
+    [isFinite(m.sfdr) ? m.sfdr.toFixed(1) + " dBc" : "∞", "SFDR"],
+    [fmtNum(m.rms), "RMS (time domain)"],
+    [fmtNum(bandRms(res, 0, null)), "RMS from ∫PSD"],
+    [m.crest.toFixed(3), "crest factor"],
+    [String(m.nHarm), "harmonics in THD"],
+  ];
+  el("metrics").innerHTML = items.map(([v, k]) =>
+    `<div class="metric"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
+}
+
+function renderVerify(rows, peaks, nExpected) {
+  if (!nExpected) {
+    if (!peaks.length) { el("verify").innerHTML = `<p class="empty">No peaks above the detection threshold.</p>`; return; }
+    el("verify").innerHTML = `<table><thead><tr>
+      <th style="text-align:left">#</th><th>measured freq (Hz)</th><th>amplitude (pk)</th><th>result</th></tr></thead><tbody>` +
+      peaks.map((p, i) => `<tr><td style="text-align:left">${i + 1}</td><td>${p.f.toFixed(3)}</td>
+        <td>${fmtNum(p.a)}</td><td><span class="chip na">no truth</span></td></tr>`).join("") +
+      `</tbody></table>`;
+    return;
+  }
+  el("verify").innerHTML = `<table><thead><tr>
+    <th>expected f (Hz)</th><th>measured f (Hz)</th><th>Δf (Hz)</th>
+    <th>expected amp</th><th>measured amp</th><th>Δamp (%)</th><th>result</th>
+    </tr></thead><tbody>` + rows.map(r => `<tr>
+      <td>${r.fe.toFixed(2)}</td><td>${isFinite(r.fm) ? r.fm.toFixed(3) : "—"}</td>
+      <td>${isFinite(r.fErr) ? (r.fErr >= 0 ? "+" : "") + r.fErr.toFixed(3) : "—"}</td>
+      <td>${fmtNum(r.ae)}</td><td>${isFinite(r.am) ? fmtNum(r.am) : "—"}</td>
+      <td>${isFinite(r.aErr) ? (r.aErr >= 0 ? "+" : "") + r.aErr.toFixed(2) : "—"}</td>
+      <td><span class="chip ${r.pass ? "ok" : "bad"}">${r.pass ? "pass" : "fail"}</span></td>
+    </tr>`).join("") + `</tbody></table>`;
+}
+
+/* ── the three canvases ── */
+
+function drawAll() {
+  if (!cache) return;
+  drawTime();
+  drawSpectrum();
+  drawSgram();
+}
+
+function drawTime() {
+  const { sig } = cache;
+  const cv = el("c-time"); const { ctx, w, h } = fitCanvas(cv);
+  const n = sig.y.length, maxPts = Math.max(600, (w - PAD.l - PAD.r) * 2);
+  const stride = Math.max(1, Math.floor(n / maxPts));
+  const X = [], Y = [];
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < n; i += stride) {
+    // min/max decimation keeps the envelope honest
+    let mn = Infinity, mx = -Infinity;
+    for (let j = i; j < Math.min(i + stride, n); j++) { if (sig.y[j] < mn) mn = sig.y[j]; if (sig.y[j] > mx) mx = sig.y[j]; }
+    X.push(i / sig.fs, i / sig.fs); Y.push(mn, mx);
+    if (mn < lo) lo = mn; if (mx > hi) hi = mx;
+  }
+  const padY = (hi - lo) * 0.08 || 1;
+  const xs = makeScale(0, n / sig.fs, PAD.l, w - PAD.r, false);
+  const ys = makeScale(lo - padY, hi + padY, h - PAD.b, PAD.t, false);
+  drawFrame(ctx, w, h, xs, ys, "time (s)", "amplitude", false);
+  drawTrace(ctx, xs, ys, X, Y, tok("--trace"), 1.4, w - PAD.l - PAD.r, h - PAD.t - PAD.b);
+  hookTip(cv, el("tip-time"), xs, ys, px => {
+    const t = xs.inv(px), i = Math.round(t * sig.fs);
+    if (i < 0 || i >= n) return null;
+    return { x: xs.px(t), y: ys.px(sig.y[i]), text: `${t.toFixed(4)} s\n${fmtNum(sig.y[i])}` };
+  });
+}
+
+function drawSpectrum() {
+  const { sig, res, peaks, met, quantity } = cache;
+  const cv = el("c-spec"); const { ctx, w, h } = fitCanvas(cv);
+  const db = state.yscale === "db", logX = state.xscale === "log";
+  const spec = res.spectrum;
+
+  let top = 0; for (let k = 0; k < spec.length; k++) if (spec[k] > top) top = spec[k];
+  const floor = top * 1e-11 + 1e-300;
+  const disp = v => toDisplay(v, quantity, db, floor);
+
+  const X = [], Y = [];
+  const kStart = logX ? 1 : 0;
+  let lo = Infinity, hi = -Infinity;
+  for (let k = kStart; k < spec.length; k++) {
+    const v = disp(spec[k]);
+    X.push(res.freqs[k]); Y.push(v);
+    if (v < lo) lo = v; if (v > hi) hi = v;
+  }
+  if (db) lo = Math.max(lo, hi - 160);
+  const padY = (hi - lo) * 0.08 || 1;
+  const fMax = res.freqs[res.freqs.length - 1];
+  const xs = makeScale(logX ? Math.max(res.freqs[1], 1) : 0, fMax, PAD.l, w - PAD.r, logX);
+  const ys = makeScale(lo - padY, hi + padY, h - PAD.b, PAD.t, false);
+
+  const unit = QUANTITIES[quantity].unit;
+  const yLabel = db ? `${QUANTITIES[quantity].label} (dB re 1 ${unit.replace("units", "unit")})`
+                    : `${QUANTITIES[quantity].label} (${unit})`;
+  drawFrame(ctx, w, h, xs, ys, "frequency (Hz)", yLabel, logX);
+
+  const plotW = w - PAD.l - PAD.r, plotH = h - PAD.t - PAD.b;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(PAD.l, PAD.t, plotW, plotH); ctx.clip();
+
+  // expected band shading — skipped when it would tint the whole axis (no information)
+  if (sig.band && (sig.band[1] - sig.band[0]) < 0.95 * (xs.hi - xs.lo)) {
+    const x0 = xs.px(Math.max(sig.band[0], xs.lo)), x1 = xs.px(sig.band[1]);
+    ctx.fillStyle = tok("--trace-soft");
+    ctx.fillRect(x0, PAD.t, x1 - x0, plotH);
+    ctx.fillStyle = tok("--ink-3"); ctx.font = '10.5px "IBM Plex Mono", monospace';
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText("expected band", x0 + 5, PAD.t + 5);
+  }
+  // harmonic cursors
+  if (state.harm === "on" && met.f0 > 0) {
+    ctx.strokeStyle = tok("--rule"); ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.fillStyle = tok("--ink-3"); ctx.font = '10px "IBM Plex Mono", monospace';
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (let hI = 2; hI <= 9 && met.f0 * hI <= fMax; hI++) {
+      const px = xs.px(met.f0 * hI);
+      ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, h - PAD.b); ctx.stroke();
+      ctx.fillText("H" + hI, px, PAD.t + 2);
+    }
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+
+  drawTrace(ctx, xs, ys, X, Y, tok("--trace"), 1.6, plotW, plotH);
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(PAD.l - 6, PAD.t - 6, plotW + 12, plotH + 12); ctx.clip();
+
+  // expected noise floor
+  if (sig.psdLevel && (quantity === "psd" || quantity === "asd")) {
+    const lvl = quantity === "psd" ? sig.psdLevel : Math.sqrt(sig.psdLevel);
+    const py = ys.px(disp(lvl));
+    ctx.strokeStyle = tok("--graphite"); ctx.lineWidth = 1.2; ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.moveTo(PAD.l, py); ctx.lineTo(w - PAD.r, py); ctx.stroke();
+    ctx.setLineDash([]);
+    // a backing plate keeps the label readable where it crosses the trace
+    ctx.font = '10.5px "IBM Plex Mono", monospace';
+    const label = "expected floor 2σ²/fs";
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = tok("--plot-bg");
+    ctx.fillRect(w - PAD.r - tw - 9, py - 16, tw + 6, 13);
+    ctx.fillStyle = tok("--graphite");
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.fillText(label, w - PAD.r - 5, py - 4);
+  }
+
+  // detected peaks, marked on the displayed curve
+  ctx.fillStyle = tok("--trace"); ctx.strokeStyle = tok("--plot-bg"); ctx.lineWidth = 2;
+  for (const p of peaks) {
+    let k = Math.round(p.f / res.binWidth);
+    k = Math.max(0, Math.min(spec.length - 1, k));
+    if (logX && res.freqs[k] <= 0) continue;
+    const px = xs.px(res.freqs[k]), py = ys.px(disp(spec[k]));
+    ctx.beginPath(); ctx.arc(px, py, 3.6, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+  }
+
+  // ground truth crosses
+  if (sig.peaks && sig.peaks.length) {
+    ctx.strokeStyle = tok("--graphite"); ctx.lineWidth = 1.8;
+    for (const [f, a] of sig.peaks) {
+      if (logX && f <= 0) continue;
+      const px = xs.px(f), py = ys.px(disp(expectedInQuantity(f, a, quantity, res.enbwHz)));
+      const r = 4.4;
+      ctx.beginPath();
+      ctx.moveTo(px - r, py - r); ctx.lineTo(px + r, py + r);
+      ctx.moveTo(px + r, py - r); ctx.lineTo(px - r, py + r);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  hookTip(cv, el("tip-spec"), xs, ys, px => {
+    const f = xs.inv(px);
+    let k = Math.round(f / res.binWidth);
+    if (k < 0 || k >= spec.length) return null;
+    return { x: xs.px(res.freqs[k]), y: ys.px(disp(spec[k])),
+             text: `${res.freqs[k].toFixed(2)} Hz\n${fmtNum(disp(spec[k]))}${db ? " dB" : ""}` };
+  });
+}
+
+function drawSgram() {
+  const { sig } = cache;
+  const cv = el("c-sgram"); const { ctx, w, h } = fitCanvas(cv);
+  const nper = Math.min(1024, nextPow2(Math.floor(sig.y.length / 16)));
+  const sg = spectrogram(sig.y, sig.fs, Math.max(64, nper), 0.5);
+  if (!sg.rows.length) { ctx.clearRect(0, 0, w, h); return; }
+
+  let mx = -Infinity;
+  for (const r of sg.rows) for (let k = 0; k < r.length; k++) if (r[k] > mx) mx = r[k];
+  // 80 dB display window below the peak — the usual analyser default; a wider
+  // span would push every real feature into the bottom of the colour ramp
+  const hiDb = 10 * Math.log10(mx), loDb = hiDb - 80;
+  const fl = Math.pow(10, loDb / 10) + 1e-300;
+  const range = 80;
+
+  const xs = makeScale(sg.times[0], sg.times[sg.times.length - 1], PAD.l, w - PAD.r, false);
+  const ys = makeScale(0, sg.freqs[sg.freqs.length - 1], h - PAD.b, PAD.t, false);
+  drawFrame(ctx, w, h, xs, ys, "time (s)", "frequency (Hz)", false);
+
+  const plotW = Math.round(w - PAD.l - PAD.r), plotH = Math.round(h - PAD.t - PAD.b);
+  const img = ctx.createImageData(plotW, plotH);
+  const c0 = hexRgb(tok("--heat-0")), c1 = hexRgb(tok("--heat-1")), c2 = hexRgb(tok("--heat-2"));
+  const nT = sg.rows.length, nF = sg.freqs.length;
+  for (let py = 0; py < plotH; py++) {
+    const fFrac = 1 - py / plotH;
+    const kf = Math.min(nF - 1, Math.round(fFrac * (nF - 1)));
+    for (let px = 0; px < plotW; px++) {
+      const ti = Math.min(nT - 1, Math.round(px / plotW * (nT - 1)));
+      const dbv = 10 * Math.log10(Math.max(sg.rows[ti][kf], fl));
+      let u = (dbv - loDb) / range;
+      u = Math.max(0, Math.min(1, u));
+      const c = u < 0.5 ? lerpRgb(c0, c1, u * 2) : lerpRgb(c1, c2, (u - 0.5) * 2);
+      const o = (py * plotW + px) * 4;
+      img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, PAD.l, PAD.t);
+  ctx.strokeStyle = tok("--rule");
+  ctx.strokeRect(PAD.l + 0.5, PAD.t + 0.5, plotW - 1, plotH - 1);
+
+  hookTip(cv, el("tip-sgram"), xs, ys, (px, py) => {
+    const t = xs.inv(px), f = ys.inv(py);
+    const ti = Math.max(0, Math.min(nT - 1, Math.round((t - sg.times[0]) / (sg.times[1] - sg.times[0] || 1))));
+    const kf = Math.max(0, Math.min(nF - 1, Math.round(f / (sg.freqs[1] || 1))));
+    const dbv = 10 * Math.log10(Math.max(sg.rows[ti][kf], fl));
+    return { x: px, y: py, text: `${sg.times[ti].toFixed(3)} s · ${sg.freqs[kf].toFixed(0)} Hz\n${dbv.toFixed(1)} dB` };
+  });
+}
+
+function hexRgb(hex) {
+  hex = hex.replace("#", "").trim();
+  if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
+  const v = parseInt(hex, 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+function lerpRgb(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+
+function hookTip(cv, tip, xs, ys, probe) {
+  cv.onpointermove = ev => {
+    const r = cv.getBoundingClientRect();
+    const px = ev.clientX - r.left, py = ev.clientY - r.top;
+    if (px < PAD.l || px > cv.clientWidth - PAD.r || py < PAD.t || py > parseInt(cv.getAttribute("height"), 10) - PAD.b) {
+      tip.style.opacity = 0; return;
+    }
+    const hit = probe(px, py);
+    if (!hit) { tip.style.opacity = 0; return; }
+    tip.textContent = hit.text;
+    tip.style.opacity = 1;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let lx = hit.x + 12; if (lx + tw > cv.clientWidth) lx = hit.x - tw - 12;
+    let ly = hit.y - th - 8; if (ly < 0) ly = hit.y + 12;
+    tip.style.left = (lx + 10) + "px";
+    tip.style.top = (ly + 8) + "px";
+  };
+  cv.onpointerleave = () => { tip.style.opacity = 0; };
+}
+
+let rt;
+window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawAll, 120); });
+if (window.matchMedia) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  (mq.addEventListener ? mq.addEventListener.bind(mq, "change") : mq.addListener.bind(mq))(drawAll);
+}
+new MutationObserver(drawAll).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+document.fonts && document.fonts.ready.then(drawAll);
+render();
+window.__bench = { analyze, windowFigures, toneMetrics, findPeaks, psToQuantity, SIGNALS, bandRms, parsevalError };
+})();
+</script>

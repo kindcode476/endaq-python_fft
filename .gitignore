@@ -247,3 +247,4 @@ fabric.properties
 
 # local secrets for the FFT analyser live deployment
 .env
+.dev.vars

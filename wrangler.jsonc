@@ -1,21 +1,34 @@
 {
-  // Static deployment of the browser build of the FFT analyser.
+  // Deploys the browser build of the FFT analyser, plus a read-only API
+  // middleman to the X2 Cloud.
   //
-  //   npx wrangler deploy          (Workers, serving ./public as assets)
+  //   npx wrangler deploy
   //
-  // There is deliberately no build step: ./public/index.html is committed
-  // and self-contained, so the Cloudflare build command can be left empty.
-  // Set the project's build output directory to "public".
+  // "name" must match the Worker you already deployed, or you get a second
+  // one at a different URL.
   //
-  // Only the browser build deploys here. The Dash app (fft_analyser/app.py)
-  // is a Python server and cannot run on Workers or Pages - see
-  // fft_analyser/README.md for how to host that.
+  // Secrets (never put these in this file - it is committed):
+  //   npx wrangler secret put ACCESS_TOKEN
+  //   npx wrangler secret put X2_USERNAME
+  //   npx wrangler secret put X2_PASSWORD
+  //
+  // Without ACCESS_TOKEN the /api/* routes refuse to serve anything, so the
+  // static page still works but live data stays off.
+  //
+  // The Dash app (fft_analyser/app.py) is a Python server and cannot run
+  // here - see fft_analyser/README.md for how to host that.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "fft-analyser",
+  "name": "endaq-python-fft",
+  "main": "worker/index.js",
   "compatibility_date": "2026-08-01",
   "assets": {
     "directory": "./public",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS"
+  },
+  "vars": {
+    // Not secret: the host and which site to read. Override per environment.
+    "X2_BASE_URL": "https://api.x2wireless.com",
+    "X2_SITE_ID": ""
   },
   "observability": {
     "enabled": true

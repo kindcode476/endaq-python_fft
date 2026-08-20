@@ -378,6 +378,7 @@
         <div class="field">
           <label for="quantity">Quantity</label>
           <select id="quantity">
+            <option value="velocity_rms">velocity (mm/s RMS)</option>
             <option value="amplitude_peak">amplitude (peak)</option>
             <option value="amplitude_rms">amplitude (RMS)</option>
             <option value="power">power spectrum</option>
@@ -550,7 +551,7 @@
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
   Python <code>fft_analyser</code> module — same conventions, verified by the
-  same ground-truth test suite. <code id="page-version">page v6-live-only</code>
+  same ground-truth test suite. <code id="page-version">page v7-velocity-units</code>
 </footer>
 
 <script>
@@ -696,6 +697,9 @@ function detrendSeg(x, mode) {
 /* ── the analysis (mirrors fft_analyser.analysis.analyze) ── */
 
 const QUANTITIES = {
+  // frequency-domain integration of acceleration (m/s²) to mm/s RMS -
+  // the machine-vibration spectrum convention (ISO 20816)
+  velocity_rms:   { label: "velocity (RMS)",   unit: "mm/s RMS",  power: false },
   amplitude_peak: { label: "amplitude (peak)", unit: "units",     power: false },
   amplitude_rms:  { label: "amplitude (RMS)",  unit: "units RMS", power: false },
   power:          { label: "power spectrum",   unit: "units² RMS", power: true  },
@@ -756,16 +760,28 @@ function analyze(x, fs, opt) {
     freqs, ps, fs, binWidth, enbwHz, nenbw: fig.nenbw, nperseg,
     nSegments: used.length, overlap, window, quantity, detrend, padFactor, hasNyq,
     scallop: fig.scallop,
-    spectrum: psToQuantity(ps, quantity, enbwHz, hasNyq),
+    spectrum: psToQuantity(ps, quantity, enbwHz, hasNyq, freqs),
   };
 }
 
-function psToQuantity(ps, quantity, enbwHz, hasNyq) {
+// bins below this are zeroed in the velocity spectrum: 1/(2πf) diverges
+// toward DC, and ~2 Hz is the standard velocity high-pass (ISO 20816)
+const VELOCITY_CUTOFF_HZ = 2.0;
+
+function psToQuantity(ps, quantity, enbwHz, hasNyq, freqs) {
   const n = ps.length, out = new Float64Array(n);
   if (quantity === "power") { out.set(ps); return out; }
   if (quantity === "amplitude_rms") { for (let k = 0; k < n; k++) out[k] = Math.sqrt(ps[k]); return out; }
   if (quantity === "psd") { for (let k = 0; k < n; k++) out[k] = ps[k] / enbwHz; return out; }
   if (quantity === "asd") { for (let k = 0; k < n; k++) out[k] = Math.sqrt(ps[k] / enbwHz); return out; }
+  if (quantity === "velocity_rms") {
+    // valid only for acceleration input in m/s²; result in mm/s RMS
+    for (let k = 0; k < n; k++) {
+      out[k] = freqs[k] >= VELOCITY_CUTOFF_HZ
+        ? Math.sqrt(ps[k]) * 1000 / (2 * Math.PI * freqs[k]) : 0;
+    }
+    return out;
+  }
   for (let k = 0; k < n; k++) out[k] = Math.sqrt(2 * ps[k]);
   out[0] = Math.sqrt(ps[0]);
   if (hasNyq) out[n - 1] = Math.sqrt(ps[n - 1]);
@@ -1188,6 +1204,9 @@ function applyRealDataDefaults() {
   el("detrend").value = "mean";
   el("nperseg").value = "8192";
   el("averaging").value = "linear";
+  // machine-vibration convention (ISO 20816): read the spectrum as
+  // velocity in mm/s RMS
+  el("quantity").value = "velocity_rms";
 }
 
 function renderAxisPicker() {
@@ -1443,8 +1462,14 @@ function render() {
     overlap: +el("overlap").value < 0 ? null : +el("overlap").value / 100,
     averaging: el("averaging").value, padFactor: +el("pad").value,
   });
-  const ampView = psToQuantity(res.ps, "amplitude_peak", res.enbwHz, res.hasNyq);
-  const peaks = findPeaks(res.freqs, ampView, +el("npeaks").value || 10);
+  // peaks are detected in the reading convention on display: the velocity
+  // spectrum when selected (its 1/f weighting re-ranks low-frequency
+  // running-speed harmonics, as on commercial vibration platforms),
+  // otherwise the peak-amplitude spectrum
+  const useVel = quantity === "velocity_rms";
+  const peakView = psToQuantity(res.ps, useVel ? "velocity_rms" : "amplitude_peak",
+                                res.enbwHz, res.hasNyq, res.freqs);
+  const peaks = findPeaks(res.freqs, peakView, +el("npeaks").value || 10);
   const par = parsevalError(sig.y, sig.fs);
   const met = toneMetrics(sig.y, sig.fs);
 
@@ -1459,7 +1484,7 @@ function render() {
     WINDOWS[window_].use;
 
   renderReadout(res, sig, par);
-  renderPeaks(peaks);
+  renderPeaks(peaks, useVel ? "velocity (mm/s RMS)" : "amplitude (pk)");
   renderMetrics(met, res);
   drawAll();
 
@@ -1513,13 +1538,13 @@ function renderMetrics(m, res) {
     `<div class="metric"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
 }
 
-function renderPeaks(peaks) {
+function renderPeaks(peaks, ampLabel) {
   if (!peaks.length) {
     el("verify").innerHTML = `<p class="empty">No peaks above the detection threshold.</p>`;
     return;
   }
   el("verify").innerHTML = `<table><thead><tr>
-    <th style="text-align:left">#</th><th>frequency (Hz)</th><th>amplitude (pk)</th>
+    <th style="text-align:left">#</th><th>frequency (Hz)</th><th>${ampLabel || "amplitude (pk)"}</th>
     </tr></thead><tbody>` +
     peaks.map((p, i) => `<tr><td style="text-align:left">${i + 1}</td>
       <td>${p.f.toFixed(3)}</td><td>${fmtNum(p.a)}</td></tr>`).join("") +
@@ -1625,6 +1650,12 @@ function drawTime() {
   const { sig } = cache;
   const cv = el("c-time"); const { ctx, w, h } = fitCanvas(cv);
   const n = sig.y.length, fs = sig.fs;
+  // vibration convention: display acceleration waveforms in g. Display
+  // only - the engine and every spectrum quantity stay in m/s².
+  const isAccel = sig.units === "m/s²";
+  const yk = isAccel ? 1 / 9.80665 : 1;
+  const yUnit = isAccel ? "g" : (sig.units || "units");
+  const yName = isAccel ? "acceleration" : "amplitude";
   const full = { x0: 0, x1: n / fs };
   const v = zoom.time
     ? { x0: Math.max(full.x0, Math.min(zoom.time.x0, zoom.time.x1)),
@@ -1644,20 +1675,20 @@ function drawTime() {
     // min/max decimation keeps the envelope honest
     let mn = Infinity, mx = -Infinity;
     for (let j = i; j < Math.min(i + stride, i1); j++) { if (sig.y[j] < mn) mn = sig.y[j]; if (sig.y[j] > mx) mx = sig.y[j]; }
-    X.push(i / fs, i / fs); Y.push(mn, mx);
-    if (mn < lo) lo = mn; if (mx > hi) hi = mx;
+    X.push(i / fs, i / fs); Y.push(mn * yk, mx * yk);
+    if (mn * yk < lo) lo = mn * yk; if (mx * yk > hi) hi = mx * yk;
   }
   const padY = (hi - lo) * 0.08 || 1;
   const xs = makeScale(v.x0, v.x1, PAD.l, w - PAD.r, false);
   const ys = makeScale(lo - padY, hi + padY, h - PAD.b, PAD.t, false);
   scales.time = xs;
-  drawFrame(ctx, w, h, xs, ys, "time (s)",
-            `amplitude (${(cache.sig && cache.sig.units) || "units"})`, false);
+  drawFrame(ctx, w, h, xs, ys, "time (s)", `${yName} (${yUnit})`, false);
   drawTrace(ctx, xs, ys, X, Y, tok("--trace"), 1.4, w - PAD.l - PAD.r, h - PAD.t - PAD.b);
   hookTip(cv, el("tip-time"), xs, ys, px => {
     const t = xs.inv(px), i = Math.round(t * sig.fs);
     if (i < 0 || i >= n) return null;
-    return { x: xs.px(t), y: ys.px(sig.y[i]), text: `${t.toFixed(4)} s\n${fmtNum(sig.y[i])}` };
+    return { x: xs.px(t), y: ys.px(sig.y[i] * yk),
+             text: `${t.toFixed(4)} s\n${fmtNum(sig.y[i] * yk)} ${yUnit}` };
   });
 }
 

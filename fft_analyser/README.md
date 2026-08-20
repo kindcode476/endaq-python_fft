@@ -74,9 +74,11 @@ without touching a real site.
 
 ## The front panel
 
-- **Quantity** — peak amplitude, RMS amplitude, power spectrum (u² RMS),
-  PSD (u²/Hz) or ASD (u/√Hz), each with correct S1/S2 window normalization
-  and DC/Nyquist single-sided handling.
+- **Quantity** — velocity (mm/s RMS, integrated from acceleration with a
+  2 Hz high-pass — the ISO 20816 machine-vibration convention), peak
+  amplitude, RMS amplitude, power spectrum (u² RMS), PSD (u²/Hz) or ASD
+  (u/√Hz), each with correct S1/S2 window normalization and DC/Nyquist
+  single-sided handling.
 - **Window** — rectangular, hann, hamming, blackman, blackman-harris,
   flattop, kaiser(β=14), with live figures of merit displayed (NENBW/ENBW,
   sidelobe level, scalloping loss, recommended overlap).
@@ -192,8 +194,11 @@ three-axis sample the DC vector is **1.043 g**, four times larger than the
 entire 10–1000 Hz vibration content. Left in, it lands in the 0 Hz bin and
 dominates every amplitude and overall-RMS reading. Selecting a real-data
 source therefore switches the analyser to `detrend="mean"`, 8192-sample
-segments and linear averaging. Use `detrend="none"` only when the DC level
-is itself the measurement (checking sensor orientation, say).
+segments, linear averaging — and the **velocity (mm/s RMS)** spectrum
+quantity, the units a vibration technician reads (ISO 20816; see
+[CONVENTIONS.md](CONVENTIONS.md) §1). The time-domain waveform of an
+acceleration signal is displayed in **g**. Use `detrend="none"` only when
+the DC level is itself the measurement (checking sensor orientation, say).
 
 The monitor bank reports the **10–1000 Hz band RMS** (the ISO 20816
 machine-vibration band) as the overall level, plus crest factor, DC offset

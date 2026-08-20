@@ -9,9 +9,9 @@ The package has four parts:
 - :py:mod:`fft_analyser.signals` - deterministic test-signal generators,
   each carrying the ground-truth spectral content it should produce
   (spectral lines, PSD noise floors, THD/ENOB values).
-- :py:mod:`fft_analyser.analysis` - the spectrum engine: five scaled
-  quantities (peak/RMS amplitude, power spectrum, PSD, ASD) with proper
-  S1/S2 window normalization and ENBW, Welch-style overlap averaging
+- :py:mod:`fft_analyser.analysis` - the spectrum engine: six scaled
+  quantities (velocity mm/s RMS, peak/RMS amplitude, power spectrum, PSD,
+  ASD) with proper S1/S2 window normalization and ENBW, Welch-style overlap averaging
   (linear / peak-hold), spectrogram, band RMS, peak detection and
   ground-truth validation.
 - :py:mod:`fft_analyser.metrics` - single-tone quality metrics: THD,
@@ -28,6 +28,7 @@ from .signals import TestSignal, TEST_SIGNALS
 from .analysis import (
     WINDOWS,
     QUANTITIES,
+    VELOCITY_CUTOFF_HZ,
     window_figures,
     SpectrumResult,
     analyze,

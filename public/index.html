@@ -211,11 +211,11 @@
     font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
     color: var(--ink-3); margin-top: 2px;
   }
-  .cell.verdict { border-color: currentColor; }
-  .cell.verdict.ok { color: var(--pass); }
-  .cell.verdict.bad { color: var(--fail); }
-  .cell.verdict .v { color: currentColor; }
-  .cell.verdict .k { color: var(--ink-3); }
+  #empty-state { display: none; }
+  body.no-data .readout, body.no-data .panel { display: none; }
+  body.no-data #empty-state { display: block; }
+  .empty-note { padding: 4px 14px 14px; color: var(--ink-2); font-size: 13.5px;
+                max-width: 60ch; }
 
   .panel {
     background: var(--panel); border: 1px solid var(--rule); border-radius: 6px;
@@ -310,12 +310,13 @@
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
+<body class="no-data">
 <header class="masthead">
   <div>
     <h1>Spectrum Bench</h1>
-    <p class="lede">An FFT analyser that grades itself. Every built-in signal carries the
-      spectrum it <em>should</em> produce; the bench overlays that ground truth on the
-      measurement and scores it live.</p>
+    <p class="lede">FFT analysis of your vibration monitors — live from the
+      X2 Cloud, or from pureMEMS waveform files opened locally. Everything is
+      computed in this browser; waveforms never leave your machine.</p>
   </div>
   <div class="stamp" id="stamp">idle</div>
 </header>
@@ -326,15 +327,7 @@
       <h2>Source</h2>
       <div class="group-body">
         <div class="field">
-          <label for="signal">Test signal</label>
-          <select id="signal"></select>
-        </div>
-        <div class="field">
-          <label for="noise">Added noise · rms <span id="noise-val">0.00</span></label>
-          <input type="range" id="noise" min="0" max="0.5" step="0.01" value="0">
-        </div>
-        <div class="field">
-          <label for="binfile">Or open a pureMEMS <code>.bin</code> waveform</label>
+          <label for="binfile">Open a pureMEMS <code>.bin</code> waveform</label>
           <input type="file" id="binfile" accept=".bin" class="filepick">
           <div id="bin-status" class="filenote">Decoded in your browser — the
             file is never uploaded anywhere.</div>
@@ -485,6 +478,12 @@
   </aside>
 
   <main>
+    <section class="panel" id="empty-state">
+      <header><h2>No data loaded</h2></header>
+      <p class="empty-note">Connect to your live monitors in the panel on the
+        left, or open a pureMEMS <code>.bin</code> waveform file. Analysis runs
+        entirely in this browser — nothing is sent anywhere.</p>
+    </section>
     <div class="readout" id="readout"></div>
 
     <section class="panel">
@@ -512,7 +511,6 @@
       <div class="swatches">
         <span><i></i> measured</span>
         <span><i class="dot"></i> detected peak</span>
-        <span><b class="x">✕</b> expected (ground truth)</span>
       </div>
     </section>
 
@@ -538,9 +536,9 @@
 
     <section class="panel">
       <header>
-        <h2>Verification</h2>
-        <p class="note">Each expected line against the nearest detected peak, in peak-amplitude
-          units. Pass = within 1 Hz and 5 % amplitude.</p>
+        <h2>Detected peaks</h2>
+        <p class="note">The strongest spectral peaks, frequency refined below
+          the bin spacing by parabolic interpolation.</p>
       </header>
       <div class="table-scroll" id="verify"></div>
     </section>
@@ -551,8 +549,8 @@
   Scaling per Heinzel/Rüdiger/Schilling 2002 (<code>S1</code>/<code>S2</code> window sums,
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
-  Python <code>fft_analyser</code> module — same conventions, same test signals, same
-  ground-truth scoring. <code id="page-version">page v5-fast-load</code>
+  Python <code>fft_analyser</code> module — same conventions, verified by the
+  same ground-truth test suite. <code id="page-version">page v6-live-only</code>
 </footer>
 
 <script>
@@ -921,35 +919,6 @@ function spectrogram(x, fs, nperseg, overlap) {
 
 /* ───────────────────────── test signals ───────────────────────── */
 
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-function gaussian(n, sigma, seed) {
-  const r = mulberry32(seed), out = new Float64Array(n);
-  for (let i = 0; i < n; i += 2) {
-    const u = Math.max(r(), 1e-12), v = r();
-    const m = Math.sqrt(-2 * Math.log(u));
-    out[i] = sigma * m * Math.cos(2 * Math.PI * v);
-    if (i + 1 < n) out[i + 1] = sigma * m * Math.sin(2 * Math.PI * v);
-  }
-  return out;
-}
-
-function tones(freqs, amps, fs, dur) {
-  const n = Math.round(fs * dur), y = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const t = i / fs; let v = 0;
-    for (let j = 0; j < freqs.length; j++) v += amps[j] * Math.sin(2 * Math.PI * freqs[j] * t);
-    y[i] = v;
-  }
-  return y;
-}
-
 /* ── pureMEMS .bin decoder ──────────────────────────────────────────
    Port of fft_analyser/pure_mems.py, which is itself verified
    sample-for-sample against the vendor's reference decoder. Prefix-coded,
@@ -1055,66 +1024,6 @@ function decodeMemsBin(buffer) {
     temperature, truncated, n,
   };
 }
-
-const SIGNALS = {
-  "Multi-tone (50/120/240 Hz)": () => ({
-    fs: 2048, y: tones([50, 120, 240], [1, 0.5, 0.25], 2048, 2),
-    desc: "Sinusoids: 1 @ 50 Hz, 0.5 @ 120 Hz, 0.25 @ 240 Hz",
-    peaks: [[50, 1], [120, 0.5], [240, 0.25]],
-  }),
-  "Single tone (100 Hz)": () => ({
-    fs: 2048, y: tones([100], [1], 2048, 2),
-    desc: "One sinusoid: 1 @ 100 Hz", peaks: [[100, 1]],
-  }),
-  "Two-tone (100/110 Hz)": () => ({
-    fs: 2048, y: tones([100, 110], [1, 1], 2048, 2),
-    desc: "Tones at 100 & 110 Hz — resolving them needs bin width × NENBW below 10 Hz",
-    peaks: [[100, 1], [110, 1]],
-  }),
-  "Distorted tone (THD 2.24 %)": () => ({
-    fs: 8192, y: tones([100, 200, 300], [1, 0.02, 0.01], 8192, 2),
-    desc: "1 @ 100 Hz with H2 = 2 %, H3 = 1 % → THD = √5 % = 2.236 %",
-    peaks: [[100, 1], [200, 0.02], [300, 0.01]],
-  }),
-  "Quantized tone (8-bit)": () => {
-    const fs = 8192, y = tones([100.372], [1], fs, 2), q = 1 / 128;
-    for (let i = 0; i < y.length; i++) y[i] = Math.round(y[i] / q) * q;
-    return { fs, y, desc: "1 @ 100.372 Hz through an ideal 8-bit quantizer → expect ENOB ≈ 8, SINAD ≈ 50 dB", peaks: [] };
-  },
-  "DC + tone": () => {
-    const fs = 2048, y = tones([100], [1], fs, 2);
-    for (let i = 0; i < y.length; i++) y[i] += 2;
-    return { fs, y, desc: "1 @ 100 Hz on a DC offset of 2 — the 0 Hz bin must read 2, not 4", peaks: [[0, 2], [100, 1]] };
-  },
-  "Square wave (50 Hz)": () => {
-    const fs = 8192, n = fs * 2, y = new Float64Array(n);
-    for (let i = 0; i < n; i++) y[i] = Math.sign(Math.sin(2 * Math.PI * 50 * i / fs));
-    const peaks = [];
-    for (let k = 1; k < 10; k += 2) if (50 * k < fs / 2) peaks.push([50 * k, 4 / (Math.PI * k)]);
-    return { fs, y, desc: "Unit square @ 50 Hz — odd harmonics at 4A/πk, THD ≈ 48.3 %", peaks };
-  },
-  "Impulse": () => {
-    const fs = 2048, n = fs, y = new Float64Array(n);
-    y[n >> 1] = 1;
-    return { fs, y, desc: `Unit impulse — flat spectrum at 2A/N = ${(2 / n).toPrecision(3)}`, peaks: [], band: [0, fs / 2] };
-  },
-  "Linear chirp (20–400 Hz)": () => {
-    const fs = 2048, dur = 2, n = fs * dur, y = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      const t = i / fs;
-      y[i] = Math.sin(2 * Math.PI * (20 * t + (400 - 20) / (2 * dur) * t * t));
-    }
-    return { fs, y, desc: "Sweep 20 → 400 Hz over 2 s", peaks: [], band: [20, 400] };
-  },
-  "White noise": () => {
-    const fs = 2048;
-    return {
-      fs, y: gaussian(fs * 8, 1, 12345),
-      desc: `Gaussian noise, rms 1 — single-sided PSD floor = 2σ²/fs = ${(2 / fs).toPrecision(3)} units²/Hz`,
-      peaks: [], band: [0, fs / 2], psdLevel: 2 / fs,
-    };
-  },
-};
 
 /* ───────────────────────── plotting ───────────────────────── */
 
@@ -1233,8 +1142,6 @@ const el = id => document.getElementById(id);
 const state = { yscale: "linear", xscale: "linear", harm: "off" };
 
 // populate selects
-const sigSel = el("signal");
-Object.keys(SIGNALS).forEach(k => sigSel.add(new Option(k, k)));
 const winSel = el("window");
 Object.keys(WINDOWS).forEach(k => winSel.add(new Option(WINDOW_LABEL[k] || k, k)));
 winSel.value = "hann";
@@ -1247,12 +1154,8 @@ document.querySelectorAll(".segbar").forEach(bar => {
     render();
   });
 });
-["signal", "quantity", "window", "nperseg", "overlap", "averaging", "detrend", "pad", "npeaks"]
+["quantity", "window", "nperseg", "overlap", "averaging", "detrend", "pad", "npeaks"]
   .forEach(id => el(id).addEventListener("change", render));
-el("noise").addEventListener("input", () => {
-  el("noise-val").textContent = (+el("noise").value).toFixed(2);
-  render();
-});
 
 // a decoded .bin waveform, when one is loaded; it overrides the dropdown
 let loadedWave = null;
@@ -1277,17 +1180,7 @@ function currentSignal() {
       peaks: [],                      // measured data has no ground truth
     };
   }
-  const s = SIGNALS[sigSel.value]();
-  const nr = +el("noise").value;
-  if (nr > 0) {
-    const g = gaussian(s.y.length, nr, 987654);
-    const y = new Float64Array(s.y.length);
-    for (let i = 0; i < y.length; i++) y[i] = s.y[i] + g[i];
-    s.y = y;
-    s.desc += ` + added noise (rms ${nr.toFixed(2)})`;
-    s.psdLevel = (s.psdLevel || 0) + 2 * nr * nr / s.fs;
-  }
-  return s;
+  return null;   // no waveform open and nothing fetched yet
 }
 
 /* Loading a real waveform switches the analyser to measured-data
@@ -1335,13 +1228,9 @@ el("binfile").addEventListener("change", async ev => {
       + (wave.samplingFreq !== wave.resamplingFreq
          ? ` (ADC ${wave.samplingFreq} Hz, resampled)` : "")
       + (wave.truncated ? " · truncated record" : "");
-    sigSel.disabled = true;
-    el("noise").disabled = true;
     render();
   } catch (err) {
     loadedWave = null;
-    sigSel.disabled = false;
-    el("noise").disabled = false;
     renderAxisPicker();
     note.className = "filenote err";
     note.textContent = `Could not decode ${file.name}: ${err.message}`;
@@ -1505,8 +1394,6 @@ async function fetchLatestWaveform() {
     loadedAxis = wave.names[wave.names.length - 1];
     applyRealDataDefaults();
     renderAxisPicker();
-    sigSel.disabled = true;
-    el("noise").disabled = true;
     el("bin-status").className = "filenote";
     el("bin-status").textContent = "Showing a live waveform — clear it by loading a file.";
     el("fetch-wave").hidden = false;
@@ -1534,16 +1421,6 @@ try {
   if (saved) el("token").value = saved;
 } catch { /* private mode */ }
 
-function expectedInQuantity(f, aPk, quantity, enbw) {
-  if (quantity === "amplitude_peak") return aPk;
-  const rms = f === 0 ? aPk : aPk / Math.SQRT2;
-  if (quantity === "amplitude_rms") return rms;
-  const p = rms * rms;
-  if (quantity === "power") return p;
-  if (quantity === "psd") return p / enbw;
-  return Math.sqrt(p / enbw);
-}
-
 function toDisplay(v, quantity, db, floor) {
   if (!db) return v;
   return (QUANTITIES[quantity].power ? 10 : 20) * Math.log10(Math.max(v, floor));
@@ -1553,6 +1430,13 @@ let cache = null;
 
 function render() {
   const sig = currentSignal();
+  if (!sig) {
+    document.body.classList.add("no-data");
+    el("stamp").textContent = "no data loaded";
+    cache = null;
+    return;
+  }
+  document.body.classList.remove("no-data");
   const quantity = el("quantity").value;
   const window_ = el("window").value;
   const res = analyze(sig.y, sig.fs, {
@@ -1576,33 +1460,16 @@ function render() {
     `scalloping ${res.scallop.toFixed(2)} dB · rec. overlap ${Math.round(WINDOWS[window_].overlap * 100)} % · ` +
     WINDOWS[window_].use;
 
-  // verification
-  const detrended = el("detrend").value !== "none";
-  const expected = (sig.peaks || []).filter(([f]) => f > 0 || !detrended);
-  const rows = expected.map(([fe, ae]) => {
-    let best = null, bd = Infinity;
-    for (const p of peaks) { const d = Math.abs(p.f - fe); if (d < bd) { bd = d; best = p; } }
-    const fm = best ? best.f : NaN, am = best ? best.a : NaN;
-    const fErr = fm - fe, aErr = ae ? (am - ae) / ae * 100 : NaN;
-    return { fe, ae, fm, am, fErr, aErr, pass: isFinite(fm) && Math.abs(fErr) <= 1 && Math.abs(aErr) <= 5 };
-  });
-
-  renderReadout(res, sig, par, rows, expected.length);
-  renderVerify(rows, peaks, expected.length);
+  renderReadout(res, sig, par);
+  renderPeaks(peaks);
   renderMetrics(met, res);
   drawAll();
 
-  const nFail = rows.filter(r => !r.pass).length;
-  el("stamp").textContent = expected.length
-    ? (nFail ? `${nFail} of ${rows.length} lines out of tolerance` : `${rows.length} lines verified`)
-    : "no discrete ground truth";
+  el("stamp").textContent =
+    loadedName.length > 44 ? loadedName.slice(0, 43) + "…" : loadedName;
 }
 
-function renderReadout(res, sig, par, rows, nExpected) {
-  const nFail = rows.filter(r => !r.pass).length;
-  const verdict = !nExpected ? { t: "n/a", c: "" }
-    : nFail ? { t: `${nFail}/${rows.length} fail`, c: "bad" }
-            : { t: `${rows.length}/${rows.length} pass`, c: "ok" };
+function renderReadout(res, sig, par) {
   // radix-2 FFT: a segment is the largest power of two that fits, so say
   // how many samples the analysis actually covered
   const covered = Math.min(
@@ -1620,8 +1487,7 @@ function renderReadout(res, sig, par, rows, nExpected) {
     [par.toExponential(1), "Parseval error"],
   ];
   el("readout").innerHTML =
-    cells.map(([v, k]) => `<div class="cell"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("") +
-    `<div class="cell verdict ${verdict.c}"><div class="v">${verdict.t}</div><div class="k">ground truth</div></div>`;
+    cells.map(([v, k]) => `<div class="cell"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
 }
 
 function renderMetrics(m, res) {
@@ -1649,26 +1515,17 @@ function renderMetrics(m, res) {
     `<div class="metric"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
 }
 
-function renderVerify(rows, peaks, nExpected) {
-  if (!nExpected) {
-    if (!peaks.length) { el("verify").innerHTML = `<p class="empty">No peaks above the detection threshold.</p>`; return; }
-    el("verify").innerHTML = `<table><thead><tr>
-      <th style="text-align:left">#</th><th>measured freq (Hz)</th><th>amplitude (pk)</th><th>result</th></tr></thead><tbody>` +
-      peaks.map((p, i) => `<tr><td style="text-align:left">${i + 1}</td><td>${p.f.toFixed(3)}</td>
-        <td>${fmtNum(p.a)}</td><td><span class="chip na">no truth</span></td></tr>`).join("") +
-      `</tbody></table>`;
+function renderPeaks(peaks) {
+  if (!peaks.length) {
+    el("verify").innerHTML = `<p class="empty">No peaks above the detection threshold.</p>`;
     return;
   }
   el("verify").innerHTML = `<table><thead><tr>
-    <th>expected f (Hz)</th><th>measured f (Hz)</th><th>Δf (Hz)</th>
-    <th>expected amp</th><th>measured amp</th><th>Δamp (%)</th><th>result</th>
-    </tr></thead><tbody>` + rows.map(r => `<tr>
-      <td>${r.fe.toFixed(2)}</td><td>${isFinite(r.fm) ? r.fm.toFixed(3) : "—"}</td>
-      <td>${isFinite(r.fErr) ? (r.fErr >= 0 ? "+" : "") + r.fErr.toFixed(3) : "—"}</td>
-      <td>${fmtNum(r.ae)}</td><td>${isFinite(r.am) ? fmtNum(r.am) : "—"}</td>
-      <td>${isFinite(r.aErr) ? (r.aErr >= 0 ? "+" : "") + r.aErr.toFixed(2) : "—"}</td>
-      <td><span class="chip ${r.pass ? "ok" : "bad"}">${r.pass ? "pass" : "fail"}</span></td>
-    </tr>`).join("") + `</tbody></table>`;
+    <th style="text-align:left">#</th><th>frequency (Hz)</th><th>amplitude (pk)</th>
+    </tr></thead><tbody>` +
+    peaks.map((p, i) => `<tr><td style="text-align:left">${i + 1}</td>
+      <td>${p.f.toFixed(3)}</td><td>${fmtNum(p.a)}</td></tr>`).join("") +
+    `</tbody></table>`;
 }
 
 /* ── the three canvases ── */
@@ -1852,52 +1709,6 @@ function drawSpectrum() {
   ctx.save();
   ctx.beginPath(); ctx.rect(PAD.l, PAD.t, plotW, plotH); ctx.clip();
 
-  // expected band shading — skipped when it would tint the whole axis (no information)
-  if (sig.band && (sig.band[1] - sig.band[0]) < 0.95 * (xs.hi - xs.lo)) {
-    const x0 = xs.px(Math.max(sig.band[0], xs.lo)), x1 = xs.px(sig.band[1]);
-    ctx.fillStyle = tok("--trace-soft");
-    ctx.fillRect(x0, PAD.t, x1 - x0, plotH);
-    ctx.fillStyle = tok("--ink-3"); ctx.font = '10.5px ui-monospace, monospace';
-    ctx.textAlign = "left"; ctx.textBaseline = "top";
-    ctx.fillText("expected band", x0 + 5, PAD.t + 5);
-  }
-  // harmonic cursors
-  if (state.harm === "on" && met.f0 > 0) {
-    ctx.strokeStyle = tok("--rule"); ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
-    ctx.fillStyle = tok("--ink-3"); ctx.font = '10px ui-monospace, monospace';
-    ctx.textAlign = "center"; ctx.textBaseline = "top";
-    for (let hI = 2; hI <= 9 && met.f0 * hI <= fMax; hI++) {
-      const px = xs.px(met.f0 * hI);
-      ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, h - PAD.b); ctx.stroke();
-      ctx.fillText("H" + hI, px, PAD.t + 2);
-    }
-    ctx.setLineDash([]);
-  }
-  ctx.restore();
-
-  drawTrace(ctx, xs, ys, X, Y, tok("--trace"), 1.6, plotW, plotH);
-
-  ctx.save();
-  ctx.beginPath(); ctx.rect(PAD.l - 6, PAD.t - 6, plotW + 12, plotH + 12); ctx.clip();
-
-  // expected noise floor
-  if (sig.psdLevel && (quantity === "psd" || quantity === "asd")) {
-    const lvl = quantity === "psd" ? sig.psdLevel : Math.sqrt(sig.psdLevel);
-    const py = ys.px(disp(lvl));
-    ctx.strokeStyle = tok("--graphite"); ctx.lineWidth = 1.2; ctx.setLineDash([6, 4]);
-    ctx.beginPath(); ctx.moveTo(PAD.l, py); ctx.lineTo(w - PAD.r, py); ctx.stroke();
-    ctx.setLineDash([]);
-    // a backing plate keeps the label readable where it crosses the trace
-    ctx.font = '10.5px ui-monospace, monospace';
-    const label = "expected floor 2σ²/fs";
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = tok("--plot-bg");
-    ctx.fillRect(w - PAD.r - tw - 9, py - 16, tw + 6, 13);
-    ctx.fillStyle = tok("--graphite");
-    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-    ctx.fillText(label, w - PAD.r - 5, py - 4);
-  }
-
   // detected peaks, marked on the displayed curve
   ctx.fillStyle = tok("--trace"); ctx.strokeStyle = tok("--plot-bg"); ctx.lineWidth = 2;
   for (const p of peaks) {
@@ -1908,19 +1719,6 @@ function drawSpectrum() {
     ctx.beginPath(); ctx.arc(px, py, 3.6, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
   }
 
-  // ground truth crosses
-  if (sig.peaks && sig.peaks.length) {
-    ctx.strokeStyle = tok("--graphite"); ctx.lineWidth = 1.8;
-    for (const [f, a] of sig.peaks) {
-      if (logX && f <= 0) continue;
-      const px = xs.px(f), py = ys.px(disp(expectedInQuantity(f, a, quantity, res.enbwHz)));
-      const r = 4.4;
-      ctx.beginPath();
-      ctx.moveTo(px - r, py - r); ctx.lineTo(px + r, py + r);
-      ctx.moveTo(px + r, py - r); ctx.lineTo(px - r, py + r);
-      ctx.stroke();
-    }
-  }
   ctx.restore();
 
   hookTip(cv, el("tip-spec"), xs, ys, px => {
@@ -2023,6 +1821,6 @@ enableZoom("c-spec", "spec", drawSpectrum, "reset-spec");
 document.fonts && document.fonts.ready.then(drawAll);
 render();
 window.__bench = { analyze, windowFigures, toneMetrics, findPeaks, psToQuantity,
-                   SIGNALS, bandRms, parsevalError, decodeMemsBin };
+                   bandRms, parsevalError, decodeMemsBin };
 })();
 </script>

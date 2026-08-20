@@ -25,10 +25,12 @@ Options: `--host`, `--port`, `--debug`.
 
 ### No-install version
 
-[`public/index.html`](../public/index.html) is the same analyser ported to
-the browser — open the file directly, no Python, no server, no network. It
-also **decodes pureMEMS `.bin` waveforms in the browser**, so real records
-can be analysed with nothing installed; the file never leaves the machine.
+[`public/index.html`](../public/index.html) is the analyser ported to the
+browser, and it works **only on real data**: pureMEMS `.bin` waveforms
+opened locally (decoded in the browser — the file never leaves the machine)
+or live monitors via the read-only Worker. It contains no sample or
+synthetic signals; the correctness of the shared engine is proven by the
+Python test suite instead.
 
 Its engine is a faithful port, checked against the Python one: all seven
 windows' `S1`/`S2`/NENBW/scalloping agree to six decimals, the tone metrics

@@ -5,7 +5,8 @@ Run with ``python -m fft_analyser`` (requires the optional ``dash``
 dependency: ``pip install dash``), then open http://127.0.0.1:8050.
 
 The front panel follows professional dynamic-signal-analyser conventions:
-selectable spectrum quantity (peak/RMS amplitude, power, PSD, ASD),
+selectable spectrum quantity (velocity mm/s RMS, peak/RMS amplitude,
+power, PSD, ASD),
 window with live figures of merit (NENBW/ENBW, sidelobe, scalloping),
 Welch overlap averaging (linear / peak hold), zero-padding, dB scales,
 single-tone quality metrics (THD, THD+N, SNR, SINAD, ENOB, SFDR), a
@@ -39,6 +40,7 @@ from .analysis import (
     WINDOWS,
     DETRENDS,
     QUANTITIES,
+    VELOCITY_CUTOFF_HZ,
     analyze,
     spectrogram,
     band_rms,
@@ -186,6 +188,11 @@ def _expected_in_quantity(freq: float, amp_pk: float, quantity: str,
     rms = amp_pk if freq == 0 else amp_pk / np.sqrt(2.0)
     if quantity == "amplitude_rms":
         return rms
+    if quantity == "velocity_rms":
+        # assumes the line is acceleration in m/s²; result in mm/s RMS
+        if freq < VELOCITY_CUTOFF_HZ:
+            return 0.0
+        return float(rms / (2.0 * np.pi * freq) * 1000.0)
     power = rms * rms
     if quantity == "power":
         return power
@@ -459,6 +466,7 @@ def create_app() -> Dash:
                   Output("detrend", "value"),
                   Output("nperseg", "value"),
                   Output("averaging", "value"),
+                  Output("quantity", "value"),
                   Input("source", "value"))
     def toggle_panels(source):
         show = {"display": "flex"}
@@ -466,13 +474,16 @@ def create_app() -> Dash:
         bank_show = {"display": "block"}
         if source in ("cloud", "bin"):
             # measured accelerometer data: strip the ~1 g static offset and
-            # average, or the 0 Hz bin dominates every reading
+            # average, or the 0 Hz bin dominates every reading - and read
+            # the spectrum as velocity (mm/s RMS), the machine-vibration
+            # convention (ISO 20816)
             return (show if source == "cloud" else hide, bank_show,
                     REAL_DATA_DEFAULTS["detrend"],
                     REAL_DATA_DEFAULTS["nperseg"],
-                    REAL_DATA_DEFAULTS["averaging"])
+                    REAL_DATA_DEFAULTS["averaging"],
+                    "velocity_rms")
         # synthetic signals are exact: leave them untouched and unaveraged
-        return hide, hide, "none", 0, "linear"
+        return hide, hide, "none", 0, "linear", "amplitude_peak"
 
     # ── .bin uploads populate the bank ──
 

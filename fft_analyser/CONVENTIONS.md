@@ -26,10 +26,24 @@ quantities are (Heinzel, Rüdiger & Schilling 2002, §5; identical to
 | Amplitude (RMS) | `√PS` | u RMS | sinusoids |
 | Amplitude (peak) | `√(2·PS)` (interior bins) | u | sinusoids |
 | Amplitude spectral density (ASD) | `√PSD` | u/√Hz | noise |
+| Velocity (RMS) | `√PS/(2πf) × 1000`, 0 below 2 Hz | mm/s RMS | machine vibration |
 
 with `c_k = 2` for interior bins and `c_k = 1` at DC and (for even FFT
 lengths) Nyquist — those bins have no negative-frequency twin and must not
 be doubled.
+
+**Velocity** is the machine-vibration reading convention (ISO 20816 states
+its broadband severity limits in mm/s RMS, and commercial condition-
+monitoring platforms display their spectra that way). An accelerometer
+measures acceleration, so the analyser integrates in the frequency domain:
+a sinusoid `a(t) = A·sin(2πft)` in m/s² has velocity amplitude `A/(2πf)`
+m/s, hence `V_rms[k] = √PS[k]/(2πf[k]) × 1000` mm/s. The 1/f weighting
+diverges toward DC, so bins below a 2 Hz high-pass cutoff
+(`VELOCITY_CUTOFF_HZ`) are zeroed — the conventional lower bound for
+velocity readings. The quantity is only meaningful when the input is
+acceleration in m/s². By the same convention the time-domain *waveform* of
+an acceleration signal is displayed in g (÷ 9.80665) — display only; the
+engine works in m/s² throughout.
 
 **Equivalent noise bandwidth** ties the two families together:
 

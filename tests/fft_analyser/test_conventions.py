@@ -13,6 +13,7 @@ from fft_analyser import signals
 from fft_analyser.analysis import (
     WINDOWS,
     QUANTITIES,
+    VELOCITY_CUTOFF_HZ,
     analyze,
     band_rms,
     spectrogram,
@@ -95,6 +96,48 @@ class TestScalingIdentities:
         r1 = analyze(sig.data, window="hann", nperseg=1024)
         r2 = analyze(sig.data, window="hann", nperseg=2048)
         npt.assert_allclose(r1.enbw_hz / r2.enbw_hz, 2.0, rtol=1e-9)
+
+
+class TestVelocitySpectrum:
+    """Frequency-domain integration to velocity mm/s RMS (ISO 20816
+    machine-vibration convention): V_rms = A_rms/(2*pi*f) * 1000, with
+    everything below the ~2 Hz high-pass cutoff zeroed."""
+
+    def test_tone_velocity_matches_analytic(self):
+        # 1 m/s² peak at 100 Hz -> (1/sqrt(2))/(2*pi*100)*1000 mm/s RMS
+        sig = signals.single_tone(freq=100.0, amp=1.0)
+        result = analyze(sig.data, quantity="velocity_rms", window="hann")
+        expected = 1000.0 / (np.sqrt(2.0) * 2.0 * np.pi * 100.0)
+        peak_bin = result.spectrum["signal"].idxmax()
+        npt.assert_allclose(peak_bin, 100.0, atol=result.bin_width / 2)
+        npt.assert_allclose(result.spectrum["signal"].max(), expected,
+                            rtol=1e-4)
+
+    def test_bins_below_cutoff_are_exactly_zero(self):
+        sig = signals.dc_plus_tone(offset=2.0)  # deliberate DC content
+        result = analyze(sig.data, quantity="velocity_rms",
+                         window="rectangular", detrend="none")
+        freqs = result.spectrum.index.to_numpy(dtype=float)
+        below = result.spectrum["signal"].to_numpy()[freqs < VELOCITY_CUTOFF_HZ]
+        assert len(below) > 0  # the record is long enough to have such bins
+        assert (below == 0.0).all()
+
+    def test_velocity_is_scaled_amplitude_rms_everywhere(self):
+        sig = signals.multi_tone(noise_rms=0.1)
+        result = analyze(sig.data, quantity="velocity_rms", window="hann")
+        rms = result.as_quantity("amplitude_rms")["signal"].to_numpy()
+        vel = result.spectrum["signal"].to_numpy()
+        freqs = result.spectrum.index.to_numpy(dtype=float)
+        band = freqs >= VELOCITY_CUTOFF_HZ
+        npt.assert_allclose(vel[band],
+                            rms[band] * 1000.0 / (2.0 * np.pi * freqs[band]),
+                            rtol=1e-12)
+        npt.assert_allclose(vel[~band], 0.0)
+
+    def test_velocity_is_an_amplitude_quantity(self):
+        label, unit, is_power = QUANTITIES["velocity_rms"]
+        assert unit == "mm/s RMS"  # absolute unit: no {u} placeholder
+        assert not is_power  # dB conversions must use 20*log10
 
 
 class TestSinusoidVsNoiseReadingRules:

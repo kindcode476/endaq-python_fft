@@ -20,6 +20,17 @@ in Hz (``NENBW = N * S2 / S1**2`` in bins).  Derived quantities:
 RMS amplitude = sqrt(PS), peak amplitude = sqrt(2*PS) (sqrt(PS) at
 DC/Nyquist), ASD = sqrt(PSD).
 
+For machine-vibration work (ISO 20816 convention) the spectrum is read as
+**velocity in mm/s RMS**, obtained from an acceleration signal by
+frequency-domain integration: a sinusoid ``a(t) = A*sin(2*pi*f*t)`` in m/s²
+has velocity amplitude ``A/(2*pi*f)`` m/s, so::
+
+    V_rms[k] = sqrt(PS[k]) / (2*pi*f[k]) * 1000       [mm/s RMS]
+
+with bins below :py:data:`VELOCITY_CUTOFF_HZ` zeroed - the 1/f weighting
+diverges toward DC, and ~2 Hz is the conventional velocity high-pass.  This
+quantity is only meaningful when the input is acceleration in m/s².
+
 The professional reading rules these scalings encode:
 
 - **Sinusoids** are read from amplitude/power spectra - their peak height is
@@ -50,6 +61,7 @@ __all__ = [
     "WINDOWS",
     "DETRENDS",
     "QUANTITIES",
+    "VELOCITY_CUTOFF_HZ",
     "WindowInfo",
     "window_figures",
     "SpectrumResult",
@@ -104,13 +116,21 @@ WINDOWS: typing.Dict[str, WindowInfo] = {info.key: info for info in [
 DETRENDS = ("none", "mean", "linear")
 
 #: quantity key -> (label, unit template, is_power_quantity)
+#: ``velocity_rms`` assumes acceleration input in m/s², so its unit is
+#: absolute (mm/s) rather than a ``{u}`` template.
 QUANTITIES: typing.Dict[str, typing.Tuple[str, str, bool]] = {
+    "velocity_rms": ("velocity (RMS)", "mm/s RMS", False),
     "amplitude_peak": ("amplitude (peak)", "{u}", False),
     "amplitude_rms": ("amplitude (RMS)", "{u} RMS", False),
     "power": ("power spectrum", "{u}² RMS", True),
     "psd": ("power spectral density", "{u}²/Hz", True),
     "asd": ("amplitude spectral density", "{u}/√Hz", False),
 }
+
+#: bins below this frequency are zeroed in the velocity spectrum - the
+#: 1/(2*pi*f) integration diverges toward DC, and ~2 Hz is the standard
+#: high-pass cutoff for machine-vibration velocity readings (ISO 20816).
+VELOCITY_CUTOFF_HZ = 2.0
 
 
 def get_window_samples(window: str, n: int) -> np.ndarray:
@@ -195,6 +215,15 @@ def _ps_to_quantity(ps: pd.DataFrame, quantity: str, enbw_hz: float,
         return out
     if quantity == "psd":
         return ps / enbw_hz
+    if quantity == "velocity_rms":
+        # Frequency-domain integration of acceleration: V_rms = A_rms/(2*pi*f),
+        # in mm/s.  Only meaningful when the input is acceleration in m/s².
+        # ``ps`` is indexed by frequency in Hz.
+        f = ps.index.to_numpy(dtype=float)
+        scale = np.zeros_like(f)
+        band = f >= VELOCITY_CUTOFF_HZ
+        scale[band] = 1000.0 / (2.0 * np.pi * f[band])
+        return ps.pow(0.5).mul(scale, axis=0)
     return (ps / enbw_hz).pow(0.5)  # asd
 
 

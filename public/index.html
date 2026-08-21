@@ -138,10 +138,16 @@
     .rail {
       position: fixed; top: 0; bottom: 0; left: 0; z-index: 50;
       width: min(320px, 86vw); overflow-y: auto; overscroll-behavior: contain;
-      background: var(--paper); padding: 60px 14px 24px;
+      background: var(--paper);
+      padding: 60px 14px max(24px, env(safe-area-inset-bottom));
       border-right: 1px solid var(--rule);
       transform: translateX(-105%); transition: transform 0.22s ease;
     }
+    /* the drawer gives the rail a fixed height; without this, column-flex
+       SHRINKS each card to fit and .group's overflow:hidden clips the
+       controls inside (unreachable Connect button). Cards keep natural
+       height; the drawer itself scrolls. */
+    .rail > .group { flex-shrink: 0; }
     body.drawer-open .rail { transform: translateX(0); box-shadow: 0 0 40px rgba(0,0,0,0.35); }
     body.drawer-open .backdrop {
       display: block; position: fixed; inset: 0; z-index: 40;
@@ -601,7 +607,7 @@
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
   Python <code>fft_analyser</code> module — same conventions, verified by the
-  same ground-truth test suite. <code id="page-version">page v10-mobile</code>
+  same ground-truth test suite. <code id="page-version">page v10.1-drawer-scroll</code>
 </footer>
 
 <script>

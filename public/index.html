@@ -567,7 +567,7 @@
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
   Python <code>fft_analyser</code> module — same conventions, verified by the
-  same ground-truth test suite. <code id="page-version">page v8-vibration-view</code>
+  same ground-truth test suite. <code id="page-version">page v9-velrms-qc</code>
 </footer>
 
 <script>
@@ -810,6 +810,21 @@ function bandRms(res, fLow, fHigh) {
   for (let k = 0; k < psd.length; k++) {
     const f = res.freqs[k];
     if (f >= fLow && f <= (fHigh == null ? Infinity : fHigh)) sum += psd[k];
+  }
+  return Math.sqrt(sum * res.binWidth);
+}
+
+// overall velocity level in mm/s RMS over an explicit band - the ISO 20816
+// headline number ("Vel RMS"). Input spectrum must be acceleration in m/s².
+function velBandRms(res, fLow, fHigh) {
+  const psd = psToQuantity(res.ps, "psd", res.enbwHz, res.hasNyq);
+  let sum = 0;
+  for (let k = 0; k < psd.length; k++) {
+    const f = res.freqs[k];
+    if (f >= fLow && f <= fHigh) {
+      const s = 1000 / (2 * Math.PI * f);
+      sum += psd[k] * s * s;
+    }
   }
   return Math.sqrt(sum * res.binWidth);
 }
@@ -1535,8 +1550,24 @@ function renderReadout(res, sig, par) {
     [String(res.nSegments), "averages"],
     [par.toExponential(1), "Parseval error"],
   ];
+  let warnCell = "";
+  if (sig.units === "m/s²") {
+    // the ISO 20816 headline number, as commercial platforms trend it
+    cells.push([fmtNum(velBandRms(res, 10, 1000)) + " mm/s",
+                "vel RMS 10–1000 Hz"]);
+    // sensor-saturation gate: samples at the pureMEMS ±16 g rail mean the
+    // spectrum's harmonics may be manufactured by clipping
+    const rail = 0.98 * 16 * 9.80665;
+    let clipped = 0;
+    for (let i = 0; i < sig.y.length; i++) if (Math.abs(sig.y[i]) >= rail) clipped++;
+    if (clipped) {
+      warnCell = `<div class="cell"><div class="v"><span class="warn">⚠ ${clipped.toLocaleString()}</span></div>` +
+                 `<div class="k">samples at ±16 g rail — possible clipping</div></div>`;
+    }
+  }
   el("readout").innerHTML =
-    cells.map(([v, k]) => `<div class="cell"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
+    cells.map(([v, k]) => `<div class="cell"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("")
+    + warnCell;
 }
 
 function renderMetrics(m, res) {
@@ -1921,6 +1952,6 @@ enableZoom("c-spec", "spec", drawSpectrum, "reset-spec");
 document.fonts && document.fonts.ready.then(drawAll);
 render();
 window.__bench = { analyze, windowFigures, toneMetrics, findPeaks, psToQuantity,
-                   bandRms, parsevalError, decodeMemsBin };
+                   bandRms, velBandRms, parsevalError, decodeMemsBin };
 })();
 </script>

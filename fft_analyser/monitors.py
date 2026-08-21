@@ -28,8 +28,12 @@ import typing
 import numpy as np
 import pandas as pd
 
-from .analysis import analyze, band_rms
+from .analysis import analyze, band_rms, signal_quality, velocity_band_rms
 from .pure_mems import MEMSWaveform, decode_bin, decode_bin_file
+
+#: pureMEMS sensor full scale: ±16 g in m/s². Samples at ~this level mean
+#: the sensor saturated and the spectrum's harmonics may be spurious.
+SENSOR_FULL_SCALE = 16.0 * 9.80665
 
 __all__ = [
     "MAX_MONITORS",
@@ -108,6 +112,8 @@ class Monitor:
             "peak": float(np.abs(x - x.mean()).max()),
             "crest": float(np.abs(x - x.mean()).max() / rms) if rms else float("nan"),
             "band_rms": float(band_rms(result, *ISO_BAND)),
+            "vel_rms_mm_s": float(velocity_band_rms(result, *ISO_BAND)),
+            "quality": signal_quality(df, full_scale=SENSOR_FULL_SCALE),
             "temperature": (float(np.mean(self.waveform.temperature_c))
                             if len(self.waveform.temperature_c) else None),
             "captured": self.captured,
@@ -251,15 +257,20 @@ def overall_levels(monitors: typing.Iterable[Monitor],
         if s.get("error"):
             rows.append({"monitor": s["name"], "status": s["error"]})
             continue
+        notes = []
+        if s["truncated"]:
+            notes.append("truncated record")
+        notes.extend(s["quality"].flags)
         rows.append({
             "monitor": s["name"],
             "axis": s["axis"],
+            "Vel RMS 10-1000 Hz (mm/s)": s["vel_rms_mm_s"],
             "band RMS 10-1000 Hz (m/s²)": s["band_rms"],
             "RMS (m/s²)": s["rms"],
             "peak (m/s²)": s["peak"],
             "crest": s["crest"],
             "DC (g)": s["dc_g"],
             "temp (°C)": s["temperature"],
-            "status": "truncated record" if s["truncated"] else "ok",
+            "status": "; ".join(notes) if notes else "ok",
         })
     return pd.DataFrame(rows)

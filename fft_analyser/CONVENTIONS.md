@@ -45,6 +45,13 @@ acceleration in m/s². By the same convention the time-domain *waveform* of
 an acceleration signal is displayed in g (÷ 9.80665) — display only; the
 engine works in m/s² throughout.
 
+The display cutoff is deliberately separate from the **measurement band**:
+the overall severity number ("Vel RMS", `velocity_band_rms()`) integrates
+the velocity PSD over an *explicit* band, 10–1000 Hz by default — the
+standard ISO 20816 evaluation band; the standard prescribes 2–1000 Hz for
+some large machine classes, which is why the band is a parameter rather
+than a constant.
+
 **Equivalent noise bandwidth** ties the two families together:
 
 ```
@@ -138,6 +145,17 @@ in σ=0.1 noise reads SNR = 16.99 dB.
   the three bins around a maximum (standard analyser marker refinement).
 - **Spectrogram** uses the same PSD scaling per segment, so its levels agree
   with the averaged spectrum.
+- **Input-quality gate** (`signal_quality()`): the FFT assumes uniformly
+  spaced, unclipped samples, so the module checks rather than assumes —
+  monotonic timestamps, jitter within tolerance, no gaps or duplicated
+  stamps, and (given the sensor full scale) no samples at the rail. A
+  clipped accelerometer manufactures harmonics that look diagnosable;
+  the gate flags that before any spectrum is read.
+- **Independent validation**: [`VALIDATION.md`](VALIDATION.md) is a
+  generated table of closed-form test signals measured by this module and,
+  independently, by `scipy.signal.welch`/`periodogram` — theory, both
+  results, and the error, enforced by the test suite
+  (`python -m fft_analyser.validation` regenerates it).
 
 ## References
 

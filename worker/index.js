@@ -39,7 +39,7 @@
  * running?" is answerable by looking, not guessing. If the page footer and
  * /api/health disagree, one of the two is stale.
  */
-const WORKER_VERSION = "10-mobile";
+const WORKER_VERSION = "10.1-drawer-scroll";
 
 const DEFAULT_BASE = "https://api.x2wireless.com";
 

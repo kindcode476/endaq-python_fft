@@ -467,6 +467,22 @@
             <button data-v="log" aria-pressed="false">log</button>
           </div>
         </div>
+        <div class="row-2">
+          <div class="field">
+            <label for="fmax">Max frequency</label>
+            <select id="fmax">
+              <option value="200">200 Hz</option>
+              <option value="500">500 Hz</option>
+              <option value="1000">1 kHz</option>
+              <option value="2000">2 kHz</option>
+              <option value="" selected>full</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="speed">Speed (Hz)</label>
+            <input type="number" id="speed" min="0" step="any" placeholder="auto">
+          </div>
+        </div>
         <div class="field">
           <span class="legend">Harmonic cursors</span>
           <div class="segbar" id="harm" role="group" aria-label="Harmonic cursors">
@@ -551,7 +567,7 @@
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
   Python <code>fft_analyser</code> module — same conventions, verified by the
-  same ground-truth test suite. <code id="page-version">page v7-velocity-units</code>
+  same ground-truth test suite. <code id="page-version">page v8-vibration-view</code>
 </footer>
 
 <script>
@@ -699,7 +715,7 @@ function detrendSeg(x, mode) {
 const QUANTITIES = {
   // frequency-domain integration of acceleration (m/s²) to mm/s RMS -
   // the machine-vibration spectrum convention (ISO 20816)
-  velocity_rms:   { label: "velocity (RMS)",   unit: "mm/s RMS",  power: false },
+  velocity_rms:   { label: "velocity",         unit: "mm/s RMS",  power: false },
   amplitude_peak: { label: "amplitude (peak)", unit: "units",     power: false },
   amplitude_rms:  { label: "amplitude (RMS)",  unit: "units RMS", power: false },
   power:          { label: "power spectrum",   unit: "units² RMS", power: true  },
@@ -1168,7 +1184,8 @@ document.querySelectorAll(".segbar").forEach(bar => {
     render();
   });
 });
-["quantity", "window", "nperseg", "overlap", "averaging", "detrend", "pad", "npeaks"]
+["quantity", "window", "nperseg", "overlap", "averaging", "detrend", "pad", "npeaks",
+ "fmax", "speed"]
   .forEach(id => el(id).addEventListener("change", render));
 
 // a decoded .bin waveform, when one is loaded; it overrides the dropdown
@@ -1205,8 +1222,11 @@ function applyRealDataDefaults() {
   el("nperseg").value = "8192";
   el("averaging").value = "linear";
   // machine-vibration convention (ISO 20816): read the spectrum as
-  // velocity in mm/s RMS
+  // velocity in mm/s RMS, over the 10-1000 Hz machine-vibration band -
+  // full-Nyquist velocity views crush every rotational peak into the
+  // left edge of the plot
   el("quantity").value = "velocity_rms";
+  el("fmax").value = "1000";
 }
 
 function renderAxisPicker() {
@@ -1469,7 +1489,13 @@ function render() {
   const useVel = quantity === "velocity_rms";
   const peakView = psToQuantity(res.ps, useVel ? "velocity_rms" : "amplitude_peak",
                                 res.enbwHz, res.hasNyq, res.freqs);
-  const peaks = findPeaks(res.freqs, peakView, +el("npeaks").value || 10);
+  // detect peaks only within the displayed span (Max frequency), so the
+  // table and the plot agree - the analysis range of a vibration platform
+  const fNyq = res.freqs[res.freqs.length - 1];
+  const fCap = Math.min(+el("fmax").value || fNyq, fNyq);
+  const kCap = Math.min(res.freqs.length, Math.floor(fCap / res.binWidth) + 1);
+  const peaks = findPeaks(res.freqs.subarray(0, kCap), peakView.subarray(0, kCap),
+                          +el("npeaks").value || 10);
   const par = parsevalError(sig.y, sig.fs);
   const met = toneMetrics(sig.y, sig.fs);
 
@@ -1702,7 +1728,11 @@ function drawSpectrum() {
   const floor = top * 1e-11 + 1e-300;
   const disp = v => toDisplay(v, quantity, db, floor);
 
-  const fMax = res.freqs[res.freqs.length - 1];
+  // the un-zoomed view spans up to Max frequency (vibration platforms
+  // display a chosen Fmax, not Nyquist - a full-Nyquist velocity view
+  // crushes the rotational peaks into the left edge)
+  const fNyq = res.freqs[res.freqs.length - 1];
+  const fMax = Math.min(+el("fmax").value || fNyq, fNyq);
   const fullLo = logX ? Math.max(res.freqs[1], 1) : 0;
   const vw = zoom.spec
     ? { x0: Math.max(fullLo, Math.min(zoom.spec.x0, zoom.spec.x1)),
@@ -1734,6 +1764,11 @@ function drawSpectrum() {
                     : `${QUANTITIES[quantity].label} (${unit})`;
   drawFrame(ctx, w, h, xs, ys, "frequency (Hz)", yLabel, logX);
 
+  // the measured curve itself (this call was lost in the sample-data
+  // removal - the page then showed only the peak dots)
+  drawTrace(ctx, xs, ys, X, Y, tok("--trace"), 1.4,
+            w - PAD.l - PAD.r, h - PAD.t - PAD.b);
+
   const plotW = w - PAD.l - PAD.r, plotH = h - PAD.t - PAD.b;
   ctx.save();
   ctx.beginPath(); ctx.rect(PAD.l, PAD.t, plotW, plotH); ctx.clip();
@@ -1746,6 +1781,42 @@ function drawSpectrum() {
     if (logX && res.freqs[k] <= 0) continue;
     const px = xs.px(res.freqs[k]), py = ys.px(disp(spec[k]));
     ctx.beginPath(); ctx.arc(px, py, 3.6, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+  }
+
+  // running-speed markers, as vibration platforms draw them: 1x at the
+  // entered speed (or the tallest detected peak when the box is empty)
+  const speedTyped = +el("speed").value > 0 ? +el("speed").value : 0;
+  const f1 = speedTyped || (peaks.length ? peaks[0].f : 0);
+  const green = tok("--pass");
+  if (state.harm === "on" && f1 > 0) {
+    ctx.strokeStyle = green; ctx.fillStyle = green;
+    ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.globalAlpha = 0.7;
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    // first 10 orders only, as platforms mark them - unbounded cursors
+    // wall the plot when 1x is small relative to the span. Labels are
+    // thinned when cursors sit closer than a label width apart.
+    const spacingPx = Math.abs(xs.px(2 * f1) - xs.px(f1));
+    const labelEvery = Math.max(1, Math.ceil(18 / Math.max(spacingPx, 1)));
+    for (let k = 1; k * f1 <= vw.x1 && k <= 10; k++) {
+      const f = k * f1;
+      if (f < vw.x0 || (logX && f <= 0)) continue;
+      const px = xs.px(f);
+      ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, h - PAD.b); ctx.stroke();
+      if ((k - 1) % labelEvery === 0) ctx.fillText(k + "×", px, PAD.t + 3);
+    }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  if (speedTyped && f1 >= vw.x0 && f1 <= vw.x1 && !(logX && f1 <= 0)) {
+    // green triangle sitting on the frequency axis at 1x, labelled "rps"
+    const px = xs.px(f1), base = h - PAD.b - 1;
+    ctx.fillStyle = green;
+    ctx.beginPath();
+    ctx.moveTo(px, base - 7); ctx.lineTo(px - 4.5, base); ctx.lineTo(px + 4.5, base);
+    ctx.closePath(); ctx.fill();
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("rps", px, base - 9);
   }
 
   ctx.restore();

@@ -68,6 +68,9 @@ __all__ = [
     "analyze",
     "spectrogram",
     "band_rms",
+    "velocity_band_rms",
+    "SignalQuality",
+    "signal_quality",
     "compute_spectrum",
     "find_spectral_peaks",
     "compare_to_expected",
@@ -232,6 +235,92 @@ def _sample_rate(df: pd.DataFrame) -> float:
     if len(t) < 2:
         raise ValueError("need at least 2 samples")
     return 1.0 / float(np.mean(np.diff(t)))
+
+
+@dataclass(frozen=True)
+class SignalQuality:
+    """The input-integrity report of :py:func:`signal_quality`.
+
+    The FFT assumes uniformly spaced, unclipped samples; this gate makes
+    that assumption checkable instead of implicit.  ``flags`` is empty when
+    the record is clean.
+    """
+    n: int
+    fs: float  #: 1 / median(dt) - robust to isolated gaps
+    dt_median: float
+    max_jitter_frac: float  #: max |dt - median| / median over normal steps
+    n_gaps: int  #: steps longer than 1.5x the median (dropped samples)
+    n_duplicates: int  #: steps shorter than half the median (or repeated stamps)
+    monotonic: bool
+    clipped: int  #: samples at >= clip_frac x full_scale (0 if no full_scale)
+    flags: typing.Tuple[str, ...]
+
+    @property
+    def ok(self) -> bool:
+        return not self.flags
+
+
+def signal_quality(
+        df: pd.DataFrame,
+        full_scale: typing.Optional[float] = None,
+        jitter_tol: float = 0.01,
+        clip_frac: float = 0.98,
+) -> SignalQuality:
+    """
+    Police the assumptions the FFT silently makes about its input.
+
+    Checks the time base (monotonic, uniform within ``jitter_tol``, no
+    gaps or duplicated stamps) and - when the sensor's ``full_scale`` is
+    given, in the same units as the data - counts samples at the rail
+    (``|x| >= clip_frac * full_scale``), the signature of a saturated
+    sensor.  A clipped accelerometer produces spurious harmonics that look
+    diagnosable, so this belongs before any spectrum reading.
+
+    Returns a :py:class:`SignalQuality`; ``.ok`` is True when no flag was
+    raised.  This function never raises on dirty data - callers decide
+    whether a flag warns or rejects.
+    """
+    t = df.index.to_numpy(dtype=float)
+    n = len(t)
+    if n < 2:
+        raise ValueError("need at least 2 samples")
+    dt = np.diff(t)
+    dt_median = float(np.median(dt))
+    if dt_median <= 0:
+        raise ValueError("timestamps are not increasing")
+    monotonic = bool((dt > 0).all())
+    gaps = int((dt > 1.5 * dt_median).sum())
+    duplicates = int((dt < 0.5 * dt_median).sum())
+    # judge jitter only over normal steps - a gap is its own flag, not jitter
+    normal = dt[(dt >= 0.5 * dt_median) & (dt <= 1.5 * dt_median)]
+    max_jitter = float(np.max(np.abs(normal - dt_median)) / dt_median) \
+        if len(normal) else 0.0
+
+    clipped = 0
+    if full_scale is not None:
+        rail = clip_frac * float(full_scale)
+        for col in df.columns:
+            x = df[col].to_numpy(dtype=float)
+            clipped += int((np.abs(x) >= rail).sum())
+
+    flags = []
+    if not monotonic:
+        flags.append("timestamps are not strictly increasing")
+    if duplicates:
+        flags.append(f"{duplicates} duplicated/compressed timestamp step(s)")
+    if gaps:
+        flags.append(f"{gaps} gap(s) in the sample stream (dropped samples)")
+    if max_jitter > jitter_tol:
+        flags.append(f"timestamp jitter up to {max_jitter:.1%} of the "
+                     f"sample interval")
+    if clipped:
+        flags.append(f"{clipped} sample(s) at the sensor rail - "
+                     f"possible clipping; spectrum harmonics may be spurious")
+
+    return SignalQuality(
+        n=n, fs=1.0 / dt_median, dt_median=dt_median,
+        max_jitter_frac=max_jitter, n_gaps=gaps, n_duplicates=duplicates,
+        monotonic=monotonic, clipped=clipped, flags=tuple(flags))
 
 
 def _segment_starts(n: int, nperseg: int, step: int) -> np.ndarray:
@@ -403,6 +492,34 @@ def band_rms(
     # the ENBW-normalized density integrates bin power; DC & Nyquist carry
     # half a bin each on the single-sided axis - close enough at Δf scale
     return float(np.sqrt(psd.to_numpy()[mask].sum() * result.bin_width))
+
+
+def velocity_band_rms(
+        result: SpectrumResult,
+        f_low: float = 10.0,
+        f_high: float = 1000.0,
+        column: typing.Optional[str] = None,
+) -> float:
+    """
+    Overall velocity level in **mm/s RMS** over an explicit frequency band -
+    the headline number of ISO 20816 machine-vibration evaluation and of
+    commercial condition-monitoring platforms ("Vel RMS").
+
+    The input spectrum must come from acceleration in m/s².  The velocity
+    PSD is ``PSD_a * (1000/(2*pi*f))**2`` and the band level is
+    ``sqrt(integral)``, exactly parallel to :py:func:`band_rms`.  The band
+    is explicit and separate from the display high-pass
+    (:py:data:`VELOCITY_CUTOFF_HZ`): 10-1000 Hz is the standard band;
+    ISO 20816 uses 2-1000 Hz for some large machine classes.
+    """
+    if f_low <= 0:
+        raise ValueError("f_low must be > 0 - velocity diverges at DC")
+    col = column if column is not None else result.ps.columns[0]
+    psd_a = result.as_quantity("psd")[col]
+    freqs = psd_a.index.to_numpy(dtype=float)
+    mask = (freqs >= f_low) & (freqs <= f_high)
+    psd_v = psd_a.to_numpy()[mask] * (1000.0 / (2.0 * np.pi * freqs[mask])) ** 2
+    return float(np.sqrt(psd_v.sum() * result.bin_width))
 
 
 def compute_spectrum(

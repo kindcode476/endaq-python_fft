@@ -607,7 +607,7 @@
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
   Python <code>fft_analyser</code> module — same conventions, verified by the
-  same ground-truth test suite. <code id="page-version">page v10.1-drawer-scroll</code>
+  same ground-truth test suite. <code id="page-version">page v10.2-dpr-fix</code>
 </footer>
 
 <script>
@@ -1114,9 +1114,19 @@ function decodeMemsBin(buffer) {
 
 function tok(name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); }
 
+// The design height of a plot, stashed from the markup's height attribute
+// on first use. NEVER read the attribute after fitCanvas has run: setting
+// cv.height (the dpr-scaled backing store) rewrites that attribute, so
+// reading it back multiplies the plot by dpr on every redraw - on a 3x
+// phone each touch made the plots grow without bound.
+function designHeight(cv) {
+  if (!cv.dataset.designH) cv.dataset.designH = cv.getAttribute("height");
+  return parseInt(cv.dataset.designH, 10);
+}
+
 function fitCanvas(cv) {
   const dpr = window.devicePixelRatio || 1;
-  const w = cv.clientWidth, h = parseInt(cv.getAttribute("height"), 10);
+  const w = cv.clientWidth, h = designHeight(cv);
   cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
   cv.style.height = h + "px";
   const ctx = cv.getContext("2d");
@@ -1704,7 +1714,7 @@ function setZoom(key, span) {
 
 function drawBand(cv, a, b) {
   const ctx = cv.getContext("2d");
-  const H = parseInt(cv.getAttribute("height"), 10);
+  const H = designHeight(cv);
   const x0 = Math.min(a, b), bw = Math.abs(b - a);
   ctx.save();
   ctx.fillStyle = tok("--trace-soft");
@@ -1729,7 +1739,7 @@ function enableZoom(cvId, key, redraw, resetId) {
   cv.addEventListener("pointerdown", ev => {
     const r = cv.getBoundingClientRect();
     const px = ev.clientX - r.left, py = ev.clientY - r.top;
-    const H = parseInt(cv.getAttribute("height"), 10);
+    const H = designHeight(cv);
     if (px < PAD.l || px > cv.clientWidth - PAD.r || py < PAD.t || py > H - PAD.b) return;
     if (!scales[key]) return;
     drag = { start: px, cur: px };
@@ -1989,7 +1999,7 @@ function hookTip(cv, tip, xs, ys, probe) {
     if (cv.dataset.dragging) { tip.style.opacity = 0; return; }
     const r = cv.getBoundingClientRect();
     const px = ev.clientX - r.left, py = ev.clientY - r.top;
-    if (px < PAD.l || px > cv.clientWidth - PAD.r || py < PAD.t || py > parseInt(cv.getAttribute("height"), 10) - PAD.b) {
+    if (px < PAD.l || px > cv.clientWidth - PAD.r || py < PAD.t || py > designHeight(cv) - PAD.b) {
       tip.style.opacity = 0; return;
     }
     const hit = probe(px, py);

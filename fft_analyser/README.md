@@ -74,11 +74,18 @@ without touching a real site.
 
 ## The front panel
 
-- **Quantity** — velocity (mm/s RMS, integrated from acceleration with a
-  2 Hz high-pass — the ISO 20816 machine-vibration convention), peak
-  amplitude, RMS amplitude, power spectrum (u² RMS), PSD (u²/Hz) or ASD
+- **Quantity** — velocity (mm/s RMS) and displacement (µm RMS), both
+  integrated from acceleration in the frequency domain with a 2 Hz
+  high-pass (the ISO 20816 machine-vibration conventions), plus peak
+  amplitude, RMS amplitude, power spectrum (u² RMS), PSD (u²/Hz) and ASD
   (u/√Hz), each with correct S1/S2 window normalization and DC/Nyquist
   single-sided handling.
+- **Analyst cursors** (browser page) — running-speed harmonics with
+  per-order amplitude readout (speed entered in Hz or RPM), sideband
+  cursors (centre ± spacing), and bearing defect frequency overlays
+  (BPFO/BPFI/BSF/FTF ×1–3 from [`bearings.py`](bearings.py) geometry —
+  nominal presets or custom entry). A selection dragged on the time
+  waveform re-runs the whole analysis on just that span (linked zoom).
 - **Window** — rectangular, hann, hamming, blackman, blackman-harris,
   flattop, kaiser(β=14), with live figures of merit displayed (NENBW/ENBW,
   sidelobe level, scalloping loss, recommended overlap).

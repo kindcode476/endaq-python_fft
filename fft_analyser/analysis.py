@@ -119,10 +119,11 @@ WINDOWS: typing.Dict[str, WindowInfo] = {info.key: info for info in [
 DETRENDS = ("none", "mean", "linear")
 
 #: quantity key -> (label, unit template, is_power_quantity)
-#: ``velocity_rms`` assumes acceleration input in m/s², so its unit is
-#: absolute (mm/s) rather than a ``{u}`` template.
+#: ``velocity_rms`` and ``displacement_um`` assume acceleration input in
+#: m/s², so their units are absolute rather than ``{u}`` templates.
 QUANTITIES: typing.Dict[str, typing.Tuple[str, str, bool]] = {
     "velocity_rms": ("velocity (RMS)", "mm/s RMS", False),
+    "displacement_um": ("displacement (RMS)", "µm RMS", False),
     "amplitude_peak": ("amplitude (peak)", "{u}", False),
     "amplitude_rms": ("amplitude (RMS)", "{u} RMS", False),
     "power": ("power spectrum", "{u}² RMS", True),
@@ -130,9 +131,10 @@ QUANTITIES: typing.Dict[str, typing.Tuple[str, str, bool]] = {
     "asd": ("amplitude spectral density", "{u}/√Hz", False),
 }
 
-#: bins below this frequency are zeroed in the velocity spectrum - the
-#: 1/(2*pi*f) integration diverges toward DC, and ~2 Hz is the standard
-#: high-pass cutoff for machine-vibration velocity readings (ISO 20816).
+#: bins below this frequency are zeroed in the velocity and displacement
+#: spectra - the 1/(2*pi*f) (and 1/(2*pi*f)²) integration diverges toward
+#: DC ("ski-slope" artifact), and ~2 Hz is the standard high-pass cutoff
+#: for machine-vibration integrated readings (ISO 20816).
 VELOCITY_CUTOFF_HZ = 2.0
 
 
@@ -226,6 +228,14 @@ def _ps_to_quantity(ps: pd.DataFrame, quantity: str, enbw_hz: float,
         scale = np.zeros_like(f)
         band = f >= VELOCITY_CUTOFF_HZ
         scale[band] = 1000.0 / (2.0 * np.pi * f[band])
+        return ps.pow(0.5).mul(scale, axis=0)
+    if quantity == "displacement_um":
+        # Double integration: D_rms = A_rms/(2*pi*f)², in µm.  Same ski-slope
+        # guard as velocity; only meaningful for acceleration input in m/s².
+        f = ps.index.to_numpy(dtype=float)
+        scale = np.zeros_like(f)
+        band = f >= VELOCITY_CUTOFF_HZ
+        scale[band] = 1e6 / (2.0 * np.pi * f[band]) ** 2
         return ps.pow(0.5).mul(scale, axis=0)
     return (ps / enbw_hz).pow(0.5)  # asd
 

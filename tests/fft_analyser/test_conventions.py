@@ -98,6 +98,34 @@ class TestScalingIdentities:
         npt.assert_allclose(r1.enbw_hz / r2.enbw_hz, 2.0, rtol=1e-9)
 
 
+class TestDisplacementSpectrum:
+    """Double frequency-domain integration to displacement µm RMS:
+    D_rms = A_rms/(2*pi*f)² * 1e6, same ski-slope guard as velocity."""
+
+    def test_tone_displacement_matches_analytic(self):
+        # 1 m/s² peak at 100 Hz -> (1/sqrt2)/(2*pi*100)^2 * 1e6 µm RMS
+        sig = signals.single_tone(freq=100.0, amp=1.0)
+        result = analyze(sig.data, quantity="displacement_um", window="hann")
+        expected = 1e6 / (np.sqrt(2.0) * (2.0 * np.pi * 100.0) ** 2)
+        peak_bin = result.spectrum["signal"].idxmax()
+        npt.assert_allclose(peak_bin, 100.0, atol=result.bin_width / 2)
+        npt.assert_allclose(result.spectrum["signal"].max(), expected,
+                            rtol=1e-4)
+
+    def test_displacement_is_velocity_over_two_pi_f(self):
+        sig = signals.multi_tone(noise_rms=0.1)
+        result = analyze(sig.data, quantity="displacement_um", window="hann")
+        vel = result.as_quantity("velocity_rms")["signal"].to_numpy()
+        disp = result.spectrum["signal"].to_numpy()
+        freqs = result.spectrum.index.to_numpy(dtype=float)
+        band = freqs >= VELOCITY_CUTOFF_HZ
+        # D[µm] = V[mm/s]/(2*pi*f) * 1000
+        npt.assert_allclose(disp[band],
+                            vel[band] * 1000.0 / (2.0 * np.pi * freqs[band]),
+                            rtol=1e-12)
+        npt.assert_allclose(disp[~band], 0.0)
+
+
 class TestVelocitySpectrum:
     """Frequency-domain integration to velocity mm/s RMS (ISO 20816
     machine-vibration convention): V_rms = A_rms/(2*pi*f) * 1000, with

@@ -27,6 +27,7 @@ quantities are (Heinzel, Rüdiger & Schilling 2002, §5; identical to
 | Amplitude (peak) | `√(2·PS)` (interior bins) | u | sinusoids |
 | Amplitude spectral density (ASD) | `√PSD` | u/√Hz | noise |
 | Velocity (RMS) | `√PS/(2πf) × 1000`, 0 below 2 Hz | mm/s RMS | machine vibration |
+| Displacement (RMS) | `√PS/(2πf)² × 1e6`, 0 below 2 Hz | µm RMS | low-freq faults (imbalance, looseness) |
 
 with `c_k = 2` for interior bins and `c_k = 1` at DC and (for even FFT
 lengths) Nyquist — those bins have no negative-frequency twin and must not

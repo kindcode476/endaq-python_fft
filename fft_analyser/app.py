@@ -193,6 +193,10 @@ def _expected_in_quantity(freq: float, amp_pk: float, quantity: str,
         if freq < VELOCITY_CUTOFF_HZ:
             return 0.0
         return float(rms / (2.0 * np.pi * freq) * 1000.0)
+    if quantity == "displacement_um":
+        if freq < VELOCITY_CUTOFF_HZ:
+            return 0.0
+        return float(rms / (2.0 * np.pi * freq) ** 2 * 1e6)
     power = rms * rms
     if quantity == "power":
         return power

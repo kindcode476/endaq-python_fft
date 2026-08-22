@@ -419,6 +419,7 @@
           <label for="quantity">Quantity</label>
           <select id="quantity">
             <option value="velocity_rms">velocity (mm/s RMS)</option>
+            <option value="displacement_um">displacement (µm RMS)</option>
             <option value="amplitude_peak">amplitude (peak)</option>
             <option value="amplitude_rms">amplitude (RMS)</option>
             <option value="power">power spectrum</option>
@@ -519,8 +520,15 @@
             </select>
           </div>
           <div class="field">
-            <label for="speed">Speed (Hz)</label>
+            <label for="speed">Speed</label>
             <input type="number" id="speed" min="0" step="any" placeholder="auto">
+          </div>
+        </div>
+        <div class="field">
+          <span class="legend">Speed unit</span>
+          <div class="segbar" id="speedunit" role="group" aria-label="Speed unit">
+            <button data-v="hz" aria-pressed="true">Hz</button>
+            <button data-v="rpm" aria-pressed="false">RPM</button>
           </div>
         </div>
         <div class="field">
@@ -530,6 +538,58 @@
             <button data-v="on" aria-pressed="false">on</button>
           </div>
         </div>
+        <div class="field">
+          <span class="legend">Sideband cursor</span>
+          <div class="row-2">
+            <input type="number" id="sb-centre" min="0" step="any"
+                   placeholder="centre Hz" aria-label="Sideband centre (Hz)">
+            <input type="number" id="sb-spacing" min="0" step="any"
+                   placeholder="spacing Hz" aria-label="Sideband spacing (Hz)">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Bearing cursors</h2>
+      <div class="group-body">
+        <div class="field">
+          <label for="brg-preset">Bearing</label>
+          <select id="brg-preset">
+            <option value="" selected>off</option>
+            <option value="6203">6203 (nominal)</option>
+            <option value="6205">6205 (nominal)</option>
+            <option value="6206">6206 (nominal)</option>
+            <option value="6207">6207 (nominal)</option>
+            <option value="6309">6309 (nominal)</option>
+            <option value="6310">6310 (nominal)</option>
+            <option value="custom">custom geometry</option>
+          </select>
+        </div>
+        <div id="brg-geom" hidden>
+          <div class="row-2">
+            <div class="field">
+              <label for="brg-n">Rollers n</label>
+              <input type="number" id="brg-n" min="2" step="1">
+            </div>
+            <div class="field">
+              <label for="brg-angle">Contact °</label>
+              <input type="number" id="brg-angle" min="0" max="89" step="any" value="0">
+            </div>
+            <div class="field">
+              <label for="brg-d">Roller ⌀ mm</label>
+              <input type="number" id="brg-d" min="0" step="any">
+            </div>
+            <div class="field">
+              <label for="brg-dp">Pitch ⌀ mm</label>
+              <input type="number" id="brg-dp" min="0" step="any">
+            </div>
+          </div>
+        </div>
+        <p class="filenote">Overlays BPFO, BPFI, BSF and FTF (×1–3) at the
+          shaft speed from the Speed box. Preset geometry is nominal —
+          verify against the manufacturer's data before diagnostic
+          decisions.</p>
       </div>
     </section>
   </aside>
@@ -598,6 +658,7 @@
           the bin spacing by parabolic interpolation.</p>
       </header>
       <div class="table-scroll" id="verify"></div>
+      <div class="table-scroll" id="harmtable"></div>
     </section>
   </main>
 </div>
@@ -607,7 +668,7 @@
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
   Python <code>fft_analyser</code> module — same conventions, verified by the
-  same ground-truth test suite. <code id="page-version">page v10.2-dpr-fix</code>
+  same ground-truth test suite. <code id="page-version">page v11-analyst-cursors</code>
 </footer>
 
 <script>
@@ -756,6 +817,7 @@ const QUANTITIES = {
   // frequency-domain integration of acceleration (m/s²) to mm/s RMS -
   // the machine-vibration spectrum convention (ISO 20816)
   velocity_rms:   { label: "velocity",         unit: "mm/s RMS",  power: false },
+  displacement_um:{ label: "displacement",     unit: "µm RMS",    power: false },
   amplitude_peak: { label: "amplitude (peak)", unit: "units",     power: false },
   amplitude_rms:  { label: "amplitude (RMS)",  unit: "units RMS", power: false },
   power:          { label: "power spectrum",   unit: "units² RMS", power: true  },
@@ -838,6 +900,14 @@ function psToQuantity(ps, quantity, enbwHz, hasNyq, freqs) {
     }
     return out;
   }
+  if (quantity === "displacement_um") {
+    // double integration, µm RMS; same ski-slope guard as velocity
+    for (let k = 0; k < n; k++) {
+      const w = 2 * Math.PI * freqs[k];
+      out[k] = freqs[k] >= VELOCITY_CUTOFF_HZ ? Math.sqrt(ps[k]) * 1e6 / (w * w) : 0;
+    }
+    return out;
+  }
   for (let k = 0; k < n; k++) out[k] = Math.sqrt(2 * ps[k]);
   out[0] = Math.sqrt(ps[0]);
   if (hasNyq) out[n - 1] = Math.sqrt(ps[n - 1]);
@@ -852,6 +922,27 @@ function bandRms(res, fLow, fHigh) {
     if (f >= fLow && f <= (fHigh == null ? Infinity : fHigh)) sum += psd[k];
   }
   return Math.sqrt(sum * res.binWidth);
+}
+
+/* ── bearing defect frequencies (mirror of fft_analyser/bearings.py) ──
+   r = (d/D)·cosθ; FTF = s/2·(1−r); BPFO = n·FTF; BPFI = n·s/2·(1+r);
+   BSF = D/(2d)·s·(1−r²). Preset geometry is NOMINAL - verify against the
+   manufacturer's data before diagnostic decisions. */
+const BEARING_PRESETS = {
+  "6203": { n: 8, d: 6.75,  D: 28.5, a: 0 },
+  "6205": { n: 9, d: 7.94,  D: 38.5, a: 0 },
+  "6206": { n: 9, d: 9.53,  D: 46.0, a: 0 },
+  "6207": { n: 9, d: 11.11, D: 53.5, a: 0 },
+  "6309": { n: 8, d: 17.46, D: 72.5, a: 0 },
+  "6310": { n: 8, d: 19.05, D: 81.5, a: 0 },
+};
+
+function bearingFreqs(n, d, D, aDeg, speedHz) {
+  const r = (d / D) * Math.cos(aDeg * Math.PI / 180);
+  const ftf = 0.5 * speedHz * (1 - r);
+  return { FTF: ftf, BPFO: n * ftf,
+           BPFI: n * 0.5 * speedHz * (1 + r),
+           BSF: (D / (2 * d)) * speedHz * (1 - r * r) };
 }
 
 // overall velocity level in mm/s RMS over an explicit band - the ISO 20816
@@ -1234,7 +1325,23 @@ function drawTrace(ctx, xs, ys, X, Y, color, w, clipTop, clipBot) {
 /* ───────────────────────── app wiring ───────────────────────── */
 
 const el = id => document.getElementById(id);
-const state = { yscale: "linear", xscale: "linear", harm: "off" };
+const state = { yscale: "linear", xscale: "linear", harm: "off", speedunit: "hz" };
+
+// shaft speed in Hz regardless of the entry unit (Hz or RPM)
+function speedHz() {
+  const v = +el("speed").value;
+  if (!(v > 0)) return 0;
+  return state.speedunit === "rpm" ? v / 60 : v;
+}
+
+// current bearing geometry from the panel, or null when off/incomplete
+function bearingSelection() {
+  if (!el("brg-preset").value) return null;
+  const n = +el("brg-n").value, d = +el("brg-d").value,
+        D = +el("brg-dp").value, a = +el("brg-angle").value || 0;
+  if (!(n >= 2 && d > 0 && D > d && a >= 0 && a < 90)) return null;
+  return { n, d, D, a };
+}
 
 // populate selects
 const winSel = el("window");
@@ -1250,8 +1357,26 @@ document.querySelectorAll(".segbar").forEach(bar => {
   });
 });
 ["quantity", "window", "nperseg", "overlap", "averaging", "detrend", "pad", "npeaks",
- "fmax", "speed"]
+ "fmax", "speed", "sb-centre", "sb-spacing"]
   .forEach(id => el(id).addEventListener("change", render));
+
+/* ── bearing panel wiring ── */
+el("brg-preset").addEventListener("change", () => {
+  const p = el("brg-preset").value;
+  el("brg-geom").hidden = !p;
+  const g = BEARING_PRESETS[p];
+  if (g) {
+    el("brg-n").value = g.n; el("brg-d").value = g.d;
+    el("brg-dp").value = g.D; el("brg-angle").value = g.a;
+  }
+  render();
+});
+["brg-n", "brg-d", "brg-dp", "brg-angle"].forEach(id =>
+  el(id).addEventListener("change", () => {
+    // editing geometry departs from the nominal preset
+    if (BEARING_PRESETS[el("brg-preset").value]) el("brg-preset").value = "custom";
+    render();
+  }));
 
 /* ── mobile drawer for the control rail ── */
 function setDrawer(open) {
@@ -1562,18 +1687,33 @@ function render() {
   document.body.classList.remove("no-data");
   const quantity = el("quantity").value;
   const window_ = el("window").value;
-  const res = analyze(sig.y, sig.fs, {
+
+  // a NEW signal must clear stale zooms BEFORE the selection below is read
+  checkZoomSignature(sig);
+
+  // linked zoom: a selection on the time plot narrows the ANALYSED span
+  // ("select time window, see its FFT"). The waveform plot keeps showing
+  // where the selection sits; Reset restores full-record analysis.
+  let y = sig.y;
+  if (zoom.time) {
+    const i0 = Math.max(0, Math.floor(Math.min(zoom.time.x0, zoom.time.x1) * sig.fs));
+    const i1 = Math.min(sig.y.length,
+                        Math.ceil(Math.max(zoom.time.x0, zoom.time.x1) * sig.fs) + 1);
+    if (i1 - i0 >= 16) y = sig.y.subarray(i0, i1);
+  }
+
+  const res = analyze(y, sig.fs, {
     quantity, window: window_, detrend: el("detrend").value,
     nperseg: +el("nperseg").value || null,
     overlap: +el("overlap").value < 0 ? null : +el("overlap").value / 100,
     averaging: el("averaging").value, padFactor: +el("pad").value,
   });
-  // peaks are detected in the reading convention on display: the velocity
-  // spectrum when selected (its 1/f weighting re-ranks low-frequency
-  // running-speed harmonics, as on commercial vibration platforms),
+  // peaks are detected in the reading convention on display: the
+  // integrated spectra when selected (their 1/f weighting re-ranks
+  // low-frequency running-speed content, as on commercial platforms),
   // otherwise the peak-amplitude spectrum
-  const useVel = quantity === "velocity_rms";
-  const peakView = psToQuantity(res.ps, useVel ? "velocity_rms" : "amplitude_peak",
+  const integrated = quantity === "velocity_rms" || quantity === "displacement_um";
+  const peakView = psToQuantity(res.ps, integrated ? quantity : "amplitude_peak",
                                 res.enbwHz, res.hasNyq, res.freqs);
   // detect peaks only within the displayed span (Max frequency), so the
   // table and the plot agree - the analysis range of a vibration platform
@@ -1582,11 +1722,10 @@ function render() {
   const kCap = Math.min(res.freqs.length, Math.floor(fCap / res.binWidth) + 1);
   const peaks = findPeaks(res.freqs.subarray(0, kCap), peakView.subarray(0, kCap),
                           +el("npeaks").value || 10);
-  const par = parsevalError(sig.y, sig.fs);
-  const met = toneMetrics(sig.y, sig.fs);
+  const par = parsevalError(y, sig.fs);
+  const met = toneMetrics(y, sig.fs);
 
-  checkZoomSignature(sig);
-  cache = { sig, res, peaks, met, quantity };
+  cache = { sig, res, peaks, met, quantity, selLen: y.length };
 
   el("sig-desc").textContent = sig.desc;
   el("win-info").textContent =
@@ -1595,8 +1734,11 @@ function render() {
     `scalloping ${res.scallop.toFixed(2)} dB · rec. overlap ${Math.round(WINDOWS[window_].overlap * 100)} % · ` +
     WINDOWS[window_].use;
 
-  renderReadout(res, sig, par);
-  renderPeaks(peaks, useVel ? "velocity (mm/s RMS)" : "amplitude (pk)");
+  renderReadout(res, sig, par, y.length);
+  renderPeaks(peaks, quantity === "velocity_rms" ? "velocity (mm/s RMS)"
+              : quantity === "displacement_um" ? "displacement (µm RMS)"
+              : "amplitude (pk)");
+  renderHarmonics(res, quantity, sig);
   renderMetrics(met, res);
   drawAll();
 
@@ -1604,13 +1746,19 @@ function render() {
     loadedName.length > 44 ? loadedName.slice(0, 43) + "…" : loadedName;
 }
 
-function renderReadout(res, sig, par) {
+function renderReadout(res, sig, par, analysedLen) {
   // radix-2 FFT: a segment is the largest power of two that fits, so say
-  // how many samples the analysis actually covered
+  // how many samples the analysis actually covered. When a time-plot
+  // selection is active, the analysed record is the selection.
+  const total = analysedLen != null ? analysedLen : sig.y.length;
+  const selected = total < sig.y.length;
   const covered = Math.min(
-    sig.y.length,
+    total,
     res.nperseg + Math.round(res.nperseg * (1 - res.overlap)) * (res.nSegments - 1));
-  const sampleCell = covered < sig.y.length
+  const sampleCell = selected
+    ? [`${covered.toLocaleString()}`,
+       `of ${total.toLocaleString()} selected samples`]
+    : covered < sig.y.length
     ? [`${covered.toLocaleString()}`, `of ${sig.y.length.toLocaleString()} samples`]
     : [sig.y.length.toLocaleString(), "samples"];
   const cells = [
@@ -1679,6 +1827,32 @@ function renderPeaks(peaks, ampLabel) {
     `</tbody></table>`;
 }
 
+// per-harmonic amplitude readout at the entered running speed - the value
+// is read from the displayed spectrum with a ±1-bin cursor snap
+function renderHarmonics(res, quantity, sig) {
+  const host = el("harmtable");
+  const f1 = speedHz();
+  if (!(f1 > 0)) { host.innerHTML = ""; return; }
+  const unit = QUANTITIES[quantity].unit.replace("units", sig.units || "units");
+  const spec = res.spectrum;
+  const rows = [];
+  for (let k = 1; k <= 10; k++) {
+    const f = k * f1;
+    if (f > res.freqs[res.freqs.length - 1]) break;
+    let best = Math.round(f / res.binWidth);
+    if (best < 0 || best >= spec.length) break;
+    for (const j of [best - 1, best + 1])
+      if (j >= 0 && j < spec.length && spec[j] > spec[best]) best = j;
+    rows.push(`<tr><td style="text-align:left">${k}×</td>` +
+              `<td>${f.toFixed(2)}</td><td>${fmtNum(spec[best])}</td></tr>`);
+  }
+  host.innerHTML = `<p class="filenote">Running-speed harmonics at ` +
+    `${f1.toFixed(2)} Hz (${(f1 * 60).toFixed(0)} RPM):</p>` +
+    `<table><thead><tr><th style="text-align:left">order</th>` +
+    `<th>frequency (Hz)</th><th>${unit}</th></tr></thead><tbody>` +
+    rows.join("") + `</tbody></table>`;
+}
+
 /* ── the three canvases ── */
 
 function drawAll() {
@@ -1725,7 +1899,7 @@ function drawBand(cv, a, b) {
   ctx.restore();
 }
 
-function enableZoom(cvId, key, redraw, resetId) {
+function enableZoom(cvId, key, redraw, resetId, onCommit) {
   const cv = el(cvId);
   // none, not pan-y: on a phone the browser would otherwise claim any
   // slightly-vertical drag as a page scroll, cancel the pointer mid-
@@ -1756,6 +1930,10 @@ function enableZoom(cvId, key, redraw, resetId) {
     drawBand(cv, drag.start, drag.cur);
   });
 
+  // onCommit runs when a selection is made or cleared; the time plot uses
+  // it to re-run the whole analysis on the selected span (linked zoom),
+  // while pointermove keeps the cheap per-frame redraw
+  const commit = onCommit || redraw;
   const finish = ev => {
     if (!drag) return;
     const { start, cur } = drag;
@@ -1766,7 +1944,7 @@ function enableZoom(cvId, key, redraw, resetId) {
     if (Math.abs(cur - start) < 8) { redraw(); return; }
     const xs = scales[key];
     setZoom(key, { x0: xs.inv(Math.min(start, cur)), x1: xs.inv(Math.max(start, cur)) });
-    redraw();
+    commit();
   };
   cv.addEventListener("pointerup", finish);
   cv.addEventListener("pointercancel", ev => {
@@ -1775,8 +1953,8 @@ function enableZoom(cvId, key, redraw, resetId) {
     try { cv.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
     redraw();
   });
-  cv.addEventListener("dblclick", () => { setZoom(key, null); redraw(); });
-  el(resetId).addEventListener("click", () => { setZoom(key, null); redraw(); });
+  cv.addEventListener("dblclick", () => { setZoom(key, null); commit(); });
+  el(resetId).addEventListener("click", () => { setZoom(key, null); commit(); });
 }
 
 function drawTime() {
@@ -1892,7 +2070,7 @@ function drawSpectrum() {
 
   // running-speed markers, as vibration platforms draw them: 1x at the
   // entered speed (or the tallest detected peak when the box is empty)
-  const speedTyped = +el("speed").value > 0 ? +el("speed").value : 0;
+  const speedTyped = speedHz();
   const f1 = speedTyped || (peaks.length ? peaks[0].f : 0);
   const green = tok("--pass");
   if (state.harm === "on" && f1 > 0) {
@@ -1924,6 +2102,50 @@ function drawSpectrum() {
     ctx.font = "10px ui-monospace, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "bottom";
     ctx.fillText("rps", px, base - 9);
+  }
+
+  // sideband cursor: centre ± k·spacing - the inner-race fault signature
+  // (e.g. BPFI flanked by 1x sidebands)
+  const sbC = +el("sb-centre").value, sbS = +el("sb-spacing").value;
+  if (sbC > 0 && sbS > 0) {
+    const amber = tok("--hold");
+    ctx.strokeStyle = amber; ctx.fillStyle = amber;
+    ctx.lineWidth = 1; ctx.globalAlpha = 0.85;
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (let k = -5; k <= 5; k++) {
+      const f = sbC + k * sbS;
+      if (f < vw.x0 || f > vw.x1 || (logX && f <= 0)) continue;
+      const px = xs.px(f);
+      ctx.setLineDash(k === 0 ? [] : [2, 3]);
+      ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, h - PAD.b); ctx.stroke();
+      if (k === 0) ctx.fillText("SB", px, PAD.t + 3);
+    }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+
+  // bearing defect frequency overlay, colour-coded per fault, x1..3
+  const brg = bearingSelection();
+  if (brg && speedTyped > 0) {
+    const bf = bearingFreqs(brg.n, brg.d, brg.D, brg.a, speedTyped);
+    const styleFor = [["BPFO", "--fail"], ["BPFI", "--hold"],
+                      ["BSF", "--graphite"], ["FTF", "--ink-3"]];
+    ctx.lineWidth = 1.2;
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    styleFor.forEach(([name, tk], row) => {
+      const c = tok(tk);
+      ctx.strokeStyle = c; ctx.fillStyle = c;
+      ctx.setLineDash([6, 3]); ctx.globalAlpha = 0.8;
+      for (let k = 1; k <= 3; k++) {
+        const f = k * bf[name];
+        if (f < vw.x0 || f > vw.x1 || (logX && f <= 0)) continue;
+        const px = xs.px(f);
+        ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, h - PAD.b); ctx.stroke();
+        ctx.fillText((k > 1 ? k + "·" : "") + name, px, PAD.t + 14 + row * 11);
+      }
+    });
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
   }
 
   ctx.restore();
@@ -2032,12 +2254,14 @@ if (window.matchMedia) {
 }
 new MutationObserver(drawAll).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-enableZoom("c-time", "time", drawTime, "reset-time");
+// the time plot's selection drives the ANALYSIS (linked zoom), so a
+// committed selection re-runs render(); dragging previews cheaply
+enableZoom("c-time", "time", drawTime, "reset-time", render);
 enableZoom("c-spec", "spec", drawSpectrum, "reset-spec");
 document.fonts && document.fonts.ready.then(drawAll);
 render();
 window.__bench = { analyze, windowFigures, toneMetrics, findPeaks, psToQuantity,
-                   bandRms, velBandRms, parsevalError, decodeMemsBin,
+                   bandRms, velBandRms, parsevalError, decodeMemsBin, bearingFreqs,
                    zoomState: () => ({ time: zoom.time, spec: zoom.spec }) };
 })();
 </script>

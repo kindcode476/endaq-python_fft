@@ -22,6 +22,7 @@ The package has four parts:
 
 from . import signals
 from . import analysis
+from . import bearings
 from . import metrics
 
 from .signals import TestSignal, TEST_SIGNALS
@@ -42,6 +43,7 @@ from .analysis import (
     compare_to_expected,
     parseval_rms_error,
 )
+from .bearings import BearingGeometry, bearing_frequencies
 from .metrics import ToneMetrics, tone_metrics
 
 __version__ = "0.2.0"

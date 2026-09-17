@@ -36,6 +36,7 @@ from .analysis import (
     spectrogram,
     band_rms,
     velocity_band_rms,
+    segment_for_averages,
     SignalQuality,
     signal_quality,
     compute_spectrum,

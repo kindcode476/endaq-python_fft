@@ -449,6 +449,7 @@
             <select id="overlap">
               <option value="-1">auto</option>
               <option value="0">0 %</option>
+              <option value="20">20 %</option>
               <option value="25">25 %</option>
               <option value="50">50 %</option>
               <option value="66">66 %</option>
@@ -668,7 +669,7 @@
   <code>ENBW = fs·S2/S1²</code>); window figures of merit per Harris 1978; overlap averaging
   per Welch 1967; tone metrics per IEEE 1241. This page is a faithful browser port of the
   Python <code>fft_analyser</code> module — same conventions, verified by the
-  same ground-truth test suite. <code id="page-version">page v11-analyst-cursors</code>
+  same ground-truth test suite. <code id="page-version">page v12-field-tuning</code>
 </footer>
 
 <script>
@@ -882,9 +883,10 @@ function analyze(x, fs, opt) {
   };
 }
 
-// bins below this are zeroed in the velocity spectrum: 1/(2πf) diverges
-// toward DC, and ~2 Hz is the standard velocity high-pass (ISO 20816)
-const VELOCITY_CUTOFF_HZ = 2.0;
+// bins below this are zeroed in the velocity/displacement spectra:
+// 1/(2πf) diverges toward DC. 5 Hz per the field spec from the client's
+// vibration engineer ("it will want high pass filter from 5 Hz").
+const VELOCITY_CUTOFF_HZ = 5.0;
 
 function psToQuantity(ps, quantity, enbwHz, hasNyq, freqs) {
   const n = ps.length, out = new Float64Array(n);
@@ -1430,8 +1432,21 @@ function currentSignal() {
    otherwise dominate the 0 Hz bin and every amplitude reading. */
 function applyRealDataDefaults() {
   el("detrend").value = "mean";
-  el("nperseg").value = "8192";
+  // field spec from the client's vibration engineer: at least 4-6 Welch
+  // averages of the waveform at 20 % overlap. A long record keeps the
+  // 8192-sample segment; a short (2 s) one halves it until the average
+  // count is reached - resolution traded for statistical stability.
   el("averaging").value = "linear";
+  el("overlap").value = "20";
+  let nperseg = 8192;
+  const n = loadedWave ? loadedWave.n : 0;
+  while (nperseg > 256) {
+    const step = Math.max(1, Math.round(nperseg * 0.8));
+    const count = n >= nperseg ? Math.floor((n - nperseg) / step) + 1 : 0;
+    if (count >= 4) break;
+    nperseg >>= 1;
+  }
+  el("nperseg").value = String(nperseg);
   // machine-vibration convention (ISO 20816): read the spectrum as
   // velocity in mm/s RMS, over the 10-1000 Hz machine-vibration band -
   // full-Nyquist velocity views crush every rotational peak into the

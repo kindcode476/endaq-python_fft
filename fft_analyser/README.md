@@ -75,7 +75,7 @@ without touching a real site.
 ## The front panel
 
 - **Quantity** — velocity (mm/s RMS) and displacement (µm RMS), both
-  integrated from acceleration in the frequency domain with a 2 Hz
+  integrated from acceleration in the frequency domain with a 5 Hz
   high-pass (the ISO 20816 machine-vibration conventions), plus peak
   amplitude, RMS amplitude, power spectrum (u² RMS), PSD (u²/Hz) and ASD
   (u/√Hz), each with correct S1/S2 window normalization and DC/Nyquist
@@ -200,8 +200,11 @@ Real accelerometers carry a static gravity component: in the vendor's own
 three-axis sample the DC vector is **1.043 g**, four times larger than the
 entire 10–1000 Hz vibration content. Left in, it lands in the 0 Hz bin and
 dominates every amplitude and overall-RMS reading. Selecting a real-data
-source therefore switches the analyser to `detrend="mean"`, 8192-sample
-segments, linear averaging — and the **velocity (mm/s RMS)** spectrum
+source therefore switches the analyser to `detrend="mean"`, linear
+averaging with **20 % overlap and at least 4–6 averages** (the field spec
+from the client's vibration engineer — `segment_for_averages()` shrinks
+the 8192-sample segment on short records until the count is reached) —
+and the **velocity (mm/s RMS)** spectrum
 quantity, the units a vibration technician reads (ISO 20816; see
 [CONVENTIONS.md](CONVENTIONS.md) §1). The time-domain waveform of an
 acceleration signal is displayed in **g**. Use `detrend="none"` only when

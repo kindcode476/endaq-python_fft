@@ -28,7 +28,7 @@ has velocity amplitude ``A/(2*pi*f)`` m/s, so::
     V_rms[k] = sqrt(PS[k]) / (2*pi*f[k]) * 1000       [mm/s RMS]
 
 with bins below :py:data:`VELOCITY_CUTOFF_HZ` zeroed - the 1/f weighting
-diverges toward DC, and ~2 Hz is the conventional velocity high-pass.  This
+diverges toward DC, and the field-configured high-pass is 5 Hz.  This
 quantity is only meaningful when the input is acceleration in m/s².
 
 The professional reading rules these scalings encode:
@@ -69,6 +69,7 @@ __all__ = [
     "spectrogram",
     "band_rms",
     "velocity_band_rms",
+    "segment_for_averages",
     "SignalQuality",
     "signal_quality",
     "compute_spectrum",
@@ -133,9 +134,10 @@ QUANTITIES: typing.Dict[str, typing.Tuple[str, str, bool]] = {
 
 #: bins below this frequency are zeroed in the velocity and displacement
 #: spectra - the 1/(2*pi*f) (and 1/(2*pi*f)²) integration diverges toward
-#: DC ("ski-slope" artifact), and ~2 Hz is the standard high-pass cutoff
-#: for machine-vibration integrated readings (ISO 20816).
-VELOCITY_CUTOFF_HZ = 2.0
+#: DC ("ski-slope" artifact). 5 Hz per the field spec from the client's
+#: vibration engineer ("it will want high pass filter from 5 Hz"), who saw
+#: sensor rumble in the 2-5 Hz region amplified by the integration.
+VELOCITY_CUTOFF_HZ = 5.0
 
 
 def get_window_samples(window: str, n: int) -> np.ndarray:
@@ -335,6 +337,29 @@ def signal_quality(
 
 def _segment_starts(n: int, nperseg: int, step: int) -> np.ndarray:
     return np.arange(0, n - nperseg + 1, step)
+
+
+def segment_for_averages(n: int, max_nperseg: int = 8192,
+                         overlap: float = 0.2, min_averages: int = 4) -> int:
+    """
+    The largest power-of-two segment length (≤ ``max_nperseg``) that yields
+    at least ``min_averages`` Welch segments of an ``n``-sample record at
+    the given overlap.
+
+    Field practice (the client's vibration engineer): "at least 4 to 6
+    averages of the TWF with 20% overlap".  A long record keeps the full
+    segment (and its resolution); a short one trades resolution for the
+    required statistical stability.  Falls back to the smallest candidate
+    (256) when even that cannot reach the count.
+    """
+    nperseg = 1 << max(8, int(np.log2(max(max_nperseg, 256))))
+    while nperseg > 256:
+        step = max(1, int(round(nperseg * (1.0 - overlap))))
+        count = len(_segment_starts(n, nperseg, step)) if n >= nperseg else 0
+        if count >= min_averages:
+            return nperseg
+        nperseg >>= 1
+    return nperseg
 
 
 def analyze(

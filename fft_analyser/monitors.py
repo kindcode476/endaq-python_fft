@@ -28,7 +28,8 @@ import typing
 import numpy as np
 import pandas as pd
 
-from .analysis import analyze, band_rms, signal_quality, velocity_band_rms
+from .analysis import (analyze, band_rms, segment_for_averages,
+                       signal_quality, velocity_band_rms)
 from .pure_mems import MEMSWaveform, decode_bin, decode_bin_file
 
 #: pureMEMS sensor full scale: ±16 g in m/s². Samples at ~this level mean
@@ -47,13 +48,17 @@ __all__ = [
 #: how many monitors the bank (and the UI) holds
 MAX_MONITORS = 5
 
-#: analysis defaults appropriate to measured accelerometer data
+#: analysis defaults appropriate to measured accelerometer data.  20 %
+#: overlap with at least 4-6 averages is the field spec from the client's
+#: vibration engineer; ``nperseg`` is the ceiling - the analysis shrinks
+#: it per record via :py:func:`~fft_analyser.analysis.segment_for_averages`
+#: so short (2 s) uploads still reach the average count.
 REAL_DATA_DEFAULTS = {
     "detrend": "mean",      # strip the gravity offset (see module docstring)
     "window": "hann",
     "averaging": "linear",
     "nperseg": 8192,
-    "overlap": 0.5,
+    "overlap": 0.2,
 }
 
 #: the broadband band used for the overall level, in Hz.  10-1000 Hz is
@@ -98,7 +103,10 @@ class Monitor:
         df = self.channel(axis)
         col = df.columns[0]
         x = df[col].to_numpy()
-        result = analyze(df, quantity="psd", **REAL_DATA_DEFAULTS)
+        kwargs = dict(REAL_DATA_DEFAULTS)
+        kwargs["nperseg"] = segment_for_averages(
+            len(df), kwargs["nperseg"], kwargs["overlap"])
+        result = analyze(df, quantity="psd", **kwargs)
         rms = float(np.sqrt(np.mean((x - x.mean()) ** 2)))
         return {
             "name": self.name,
